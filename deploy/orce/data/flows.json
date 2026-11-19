@@ -1,0 +1,401 @@
+[
+ {
+  "id": "tab-ingest-sim",
+  "type": "tab",
+  "label": "ingest-sim",
+  "disabled": false,
+  "info": "POST /ingest/sim + tick simulation -> gate -> bronze"
+ },
+ {
+  "id": "tab-ingest-sftp",
+  "type": "tab",
+  "label": "ingest-sftp",
+  "disabled": false,
+  "info": "cycle SFTP 60 s -> gate -> bronze, archive, curseur, DLQ"
+ },
+ {
+  "id": "tab-ingest-mqtt",
+  "type": "tab",
+  "label": "ingest-mqtt",
+  "disabled": false,
+  "info": "pont MQTT -> gate -> bronze (QoS par route)"
+ },
+ {
+  "id": "tab-dsp",
+  "type": "tab",
+  "label": "dsp",
+  "disabled": false,
+  "info": "catalogue DSP + data plane DSP (HMAC, rate limit, audit)"
+ },
+ {
+  "id": "tab-health",
+  "type": "tab",
+  "label": "health",
+  "disabled": false,
+  "info": ""
+ },
+ {
+  "id": "n-in-sim",
+  "type": "http in",
+  "name": "POST /ingest/sim",
+  "z": "tab-ingest-sim",
+  "x": 100,
+  "y": 100,
+  "url": "/ingest/sim",
+  "method": "post",
+  "wires": [
+   [
+    "n-fn-gate-sim"
+   ]
+  ]
+ },
+ {
+  "id": "n-fn-gate-sim",
+  "type": "function",
+  "name": "gate -> bronze (role gate)",
+  "z": "tab-ingest-sim",
+  "x": 320,
+  "y": 100,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\nconst SIM_TOPIC = {\n  'smart_energy.meter': 'sim.smart_energy.meter',\n  'smart_energy.pv': 'sim.smart_energy.pv',\n  'smart_energy.price': 'sim.smart_energy.price',\n  'smart_energy.weather': 'sim.smart_energy.weather',\n  'smart_energy.consumer': 'sim.smart_energy.consumer',\n  'smart_city.light': 'sim.smart_city.light',\n  'smart_city.traffic': 'sim.smart_city.traffic',\n  'smart_city.event': 'sim.smart_city.event',\n  'smart_city.weather': 'sim.smart_city.weather'\n};\n\n(async () => {\n  try {\n    const p = msg.payload || {};\n    const type = p.type;\n    const topic = SIM_TOPIC[type] || ('sim.' + String(type || 'unknown'));\n    const key = p.meter_id || p.pv_system_id || p.consumer_id || p.zone_id || p.city_id || null;\n    const res = await pool('gate').query(\n      'SELECT public.gate_ingest($1,$2,$3,$4,$5,$6) AS r',\n      [type, JSON.stringify(p), topic, 'simulation', key, null]);\n    const r = res.rows[0].r;\n    msg.statusCode = r.ok ? 200 : 202;\n    msg.payload = r;\n    node.send(msg);\n  } catch (e) {\n    msg.statusCode = 500;\n    msg.payload = { error: String(e && e.message || e) };\n    node.send(msg);\n  }\n  node.done();\n})();\n",
+  "outputs": 1,
+  "wires": [
+   [
+    "n-res-sim"
+   ]
+  ]
+ },
+ {
+  "id": "n-res-sim",
+  "type": "http response",
+  "name": "",
+  "z": "tab-ingest-sim",
+  "x": 560,
+  "y": 100
+ },
+ {
+  "id": "n-sim-tick",
+  "type": "inject",
+  "name": "tick simulation 60s",
+  "z": "tab-ingest-sim",
+  "x": 100,
+  "y": 180,
+  "repeat": "60",
+  "once": true,
+  "onceDelay": 5,
+  "wires": [
+   [
+    "n-fn-sim"
+   ]
+  ]
+ },
+ {
+  "id": "n-fn-sim",
+  "type": "function",
+  "name": "génère 9 feeds (seedrandom) -> gate",
+  "z": "tab-ingest-sim",
+  "x": 340,
+  "y": 180,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\nconst SIM_TOPIC = {\n  'smart_energy.meter': 'sim.smart_energy.meter',\n  'smart_energy.pv': 'sim.smart_energy.pv',\n  'smart_energy.price': 'sim.smart_energy.price',\n  'smart_energy.weather': 'sim.smart_energy.weather',\n  'smart_energy.consumer': 'sim.smart_energy.consumer',\n  'smart_city.light': 'sim.smart_city.light',\n  'smart_city.traffic': 'sim.smart_city.traffic',\n  'smart_city.event': 'sim.smart_city.event',\n  'smart_city.weather': 'sim.smart_city.weather'\n};\n\n(async () => {\n  try {\n    const seedrandom = require('seedrandom');\n    const site = env.get('SIM_SITE_ID') || 'site-berlin-001';\n    const now = new Date().toISOString();\n    const rnd = seedrandom((env.get('SIM_SEED') || 'fap-light') + now.slice(0, 13));\n    const f = (a, b, d) => +(a + rnd() * (b - a)).toFixed(d === undefined ? 2 : d);\n    const payloads = [\n      { type: 'smart_energy.meter', schema_version: '1.0', timestamp: now, site_id: site,\n        meter_id: 'janitza-umg96rm-001', asset_id: 'janitza-umg96rm-001',\n        active_power_kw: f(5, 30), active_energy_kwh_total: f(54000, 55000),\n        readings: { active_power_l1_w: f(1500, 5000, 1), active_power_l2_w: f(1500, 5000, 1),\n          active_power_l3_w: f(1500, 5000, 1), voltage_l1_v: 230.5, voltage_l2_v: 229.8,\n          voltage_l3_v: 231.2, current_l1_a: f(5, 20, 1), current_l2_a: f(5, 20, 1),\n          current_l3_a: f(5, 20, 1), power_factor: 0.97, frequency_hz: 50.01, total_energy_kwh: 54321.67 } },\n      { type: 'smart_energy.pv', schema_version: '1.0', timestamp: now, site_id: site,\n        pv_system_id: 'pv-rooftop-001', power_kw: f(2, 10), energy_kwh_today: f(5, 40), capacity_kw: 12 },\n      { type: 'smart_energy.price', schema_version: '1.0', timestamp: now, site_id: site, price_eur_kwh: f(0.15, 0.35, 4) },\n      { type: 'smart_energy.weather', schema_version: '1.0', timestamp: now, site_id: site,\n        temperature_c: f(-2, 28), irradiance_wm2: f(0, 900, 0), humidity_pct: f(20, 95, 0),\n        wind_speed_ms: f(0, 12), cloud_cover_pct: f(0, 100, 0) },\n      { type: 'smart_energy.consumer', schema_version: '1.0', timestamp: now, site_id: site,\n        consumer_id: 'consumer-001', load_kw: f(0.5, 6) },\n      { type: 'smart_city.light', schema_version: '1.0', timestamp: now, zone_id: 'zone-north',\n        dim_level: f(20, 100, 1), power_kw: f(0.5, 4) },\n      { type: 'smart_city.traffic', schema_version: '1.0', timestamp: now, zone_id: 'zone-north',\n        vehicle_count: Math.floor(rnd() * 500) },\n      { type: 'smart_city.event', schema_version: '1.0', timestamp: now, zone_id: 'zone-north',\n        event_type: ['ACCIDENT', 'EMERGENCY', 'EVENT'][Math.floor(rnd() * 3)], severity: 1 + Math.floor(rnd() * 5) },\n      { type: 'smart_city.weather', schema_version: '1.0', timestamp: now, city_id: 'berlin',\n        temperature_c: f(-3, 29), humidity_pct: f(20, 95, 0) }\n    ];\n    const p = pool('gate');\n    for (const pl of payloads) {\n      await p.query('SELECT public.gate_ingest($1,$2,$3,$4,$5,$6) AS r',\n        [pl.type, JSON.stringify(pl), SIM_TOPIC[pl.type], 'simulation',\n         pl.meter_id || pl.pv_system_id || pl.consumer_id || pl.zone_id || pl.city_id || null, null]);\n    }\n  } catch (e) {\n    node.error(e, msg);\n  }\n  node.done();\n})();\n",
+  "outputs": 1
+ },
+ {
+  "id": "n-sftp-tick",
+  "type": "inject",
+  "name": "cycle SFTP 60s",
+  "z": "tab-ingest-sftp",
+  "x": 100,
+  "y": 100,
+  "repeat": "60",
+  "once": true,
+  "onceDelay": 10
+ },
+ {
+  "id": "n-fn-sftp",
+  "type": "function",
+  "name": "poll /ingest -> garde -> parse -> gate -> archive + curseur",
+  "z": "tab-ingest-sftp",
+  "x": 380,
+  "y": 100,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\nfunction coerceCsvRow(r) {\n  const out = {};\n  for (const k of Object.keys(r)) {\n    const v = r[k];\n    if (v === null || v === undefined || v === '') { out[k] = v; continue; }\n    if (/(_kw|_w|_kwh|_c|_pct|_ms|_v|_a|_hz|_eur_kwh|_count|_level|_factor)$/.test(k) && !isNaN(Number(v))) out[k] = Number(v);\n    else out[k] = v;\n  }\n  return out;\n}\n(async () => {\n  const Sftp = require('ssh2-sftp-client');\n  const { parse } = require('csv-parse/sync');\n  const sftp = new Sftp();\n  try {\n    await sftp.connect({\n      host: env.get('SFTP_HOST') || 'sftp',\n      port: parseInt(env.get('SFTP_PORT') || '22', 10),\n      username: env.get('SFTP_USER') || 'fap',\n      password: env.get('SFTP_PASSWORD') || ''\n    });\n    const ingestDir = env.get('SFTP_INGEST_DIR') || '/ingest';\n    const archiveDir = env.get('SFTP_ARCHIVE_DIR') || '/archive';\n    const maxBytes = parseInt(env.get('SFTP_MAX_BYTES') || '1048576', 10);\n    const p = pool('gate');\n    const list = await sftp.list(ingestDir);\n    for (const f of list) {\n      if (f.type !== '-') continue;\n      const name = f.name;\n      const remote = ingestDir + '/' + name;\n      let buf = null;\n      try {\n        if (!/\\.(json|csv)$/i.test(name)) {\n          const e = new Error('extension non autorisée (attendu .json/.csv)'); e.code = 'bad_extension'; throw e;\n        }\n        buf = await sftp.get(remote);\n        if (buf.length > maxBytes) {\n          const e = new Error('taille > ' + maxBytes + ' octets'); e.code = 'file_too_large'; throw e;\n        }\n        let payloads;\n        if (/\\.csv$/i.test(name)) {\n          payloads = parse(buf.toString('utf8'), { columns: true, skip_empty_lines: true }).map(coerceCsvRow);\n        } else {\n          payloads = [JSON.parse(buf.toString('utf8'))];\n        }\n        for (const pl of payloads) {\n          await p.query('SELECT public.gate_ingest($1,$2,$3,$4,$5,$6) AS r',\n            [pl.type, JSON.stringify(pl), 'sftp:' + name, 'sftp',\n             pl.meter_id || pl.pv_system_id || pl.consumer_id || pl.zone_id || pl.city_id || null, name]);\n        }\n      } catch (e) {\n        try {\n          await p.query('SELECT public.gate_reject($1,$2,$3,$4,$5) AS r',\n            [e.code || 'parse_error', String(e && e.message || e), buf ? buf.toString('utf8') : '', name, 'sftp:' + name]);\n        } catch (e2) { node.error(e2, msg); }\n      }\n      try { await sftp.rename(remote, archiveDir + '/' + name); }\n      catch (e) { node.warn('archive failed: ' + name + ' ' + e.message); }\n    }\n  } catch (e) {\n    node.error(e, msg);\n  } finally {\n    try { await sftp.end(); } catch (_) {}\n  }\n  node.done();\n})();\n",
+  "outputs": 1
+ },
+ {
+  "id": "n-mqtt-broker",
+  "type": "mqtt-broker",
+  "name": "mosquitto",
+  "z": "tab-ingest-mqtt",
+  "x": 0,
+  "y": 0,
+  "broker": "mosquitto",
+  "port": "1883",
+  "clientid": "fap-light-orce"
+ },
+ {
+  "id": "n-fn-mqtt",
+  "type": "function",
+  "name": "MQTT -> enveloppe -> gate (source_topic = topic d'origine, D-1)",
+  "z": "tab-ingest-mqtt",
+  "x": 380,
+  "y": 300,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\n(async () => {\n  try {\n    let pl = msg.payload;\n    if (Buffer.isBuffer(pl)) pl = pl.toString('utf8');\n    if (typeof pl === 'string') pl = JSON.parse(pl);\n    await pool('gate').query('SELECT public.gate_ingest($1,$2,$3,$4,$5,$6) AS r',\n      [pl.type, JSON.stringify(pl), msg.topic, 'mqtt',\n       pl.meter_id || pl.pv_system_id || pl.consumer_id || pl.zone_id || pl.city_id || null, null]);\n  } catch (e) {\n    try {\n      await pool('gate').query('SELECT public.gate_reject($1,$2,$3,$4,$5) AS r',\n        ['mqtt_parse_error', String(e && e.message || e), String(msg.payload), null, msg.topic]);\n    } catch (e2) { node.error(e2, msg); }\n  }\n  node.done();\n})();\n",
+  "outputs": 1
+ },
+ {
+  "id": "n-mqtt-0",
+  "type": "mqtt in",
+  "name": "facis/energy/meter/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 100,
+  "topic": "facis/energy/meter/+",
+  "qos": "1",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-1",
+  "type": "mqtt in",
+  "name": "facis/prices/spot",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 160,
+  "topic": "facis/prices/spot",
+  "qos": "1",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-2",
+  "type": "mqtt in",
+  "name": "facis/energy/pv/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 220,
+  "topic": "facis/energy/pv/+",
+  "qos": "1",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-3",
+  "type": "mqtt in",
+  "name": "facis/weather/current",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 280,
+  "topic": "facis/weather/current",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-4",
+  "type": "mqtt in",
+  "name": "facis/loads/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 340,
+  "topic": "facis/loads/+",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-5",
+  "type": "mqtt in",
+  "name": "facis/city/lights/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 400,
+  "topic": "facis/city/lights/+",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-6",
+  "type": "mqtt in",
+  "name": "facis/city/traffic/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 460,
+  "topic": "facis/city/traffic/+",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-7",
+  "type": "mqtt in",
+  "name": "facis/city/events/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 520,
+  "topic": "facis/city/events/+",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-mqtt-8",
+  "type": "mqtt in",
+  "name": "facis/city/weather/+",
+  "z": "tab-ingest-mqtt",
+  "x": 120,
+  "y": 580,
+  "topic": "facis/city/weather/+",
+  "qos": "0",
+  "broker": "n-mqtt-broker",
+  "wires": [
+   [
+    "n-fn-mqtt"
+   ]
+  ]
+ },
+ {
+  "id": "n-in-cat",
+  "type": "http in",
+  "name": "POST /dsp/catalogue/request",
+  "z": "tab-dsp",
+  "x": 100,
+  "y": 100,
+  "url": "/dsp/catalogue/request",
+  "method": "post",
+  "wires": [
+   [
+    "n-fn-cat"
+   ]
+  ]
+ },
+ {
+  "id": "n-fn-cat",
+  "type": "function",
+  "name": "catalogue DSP (auto-dérivé gold ∩ datasets.json)",
+  "z": "tab-dsp",
+  "x": 340,
+  "y": 100,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\nfunction dspError(status, code, reasons) {\n  return { statusCode: status, payload: {\n    '@context': 'https://w3id.org/dspace/2025/1/context.jsonld',\n    '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons } };\n}\n\n(async () => {\n  try {\n    const fs = require('fs');\n    const datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));\n    // auto-dérivation depuis le catalogue PG (gold uniquement à l'ISO, spec §C1.6) :\n    // on ne publie que les tables gold EXISTANTES (visibles par le rôle reader)\n    // ET déclarées dans datasets.json.\n    const res = await pool('reader').query(\n      \"SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \" +\n      \"WHERE n.nspname = 'gold' AND c.relkind IN ('m','r','v')\");\n    const gold = new Set(res.rows.map(r => r.relname));\n    const out = (Array.isArray(datasets) ? datasets : [])\n      .filter(d => d && d.metadata && d.metadata.schema === 'gold' && gold.has(d.metadata.table));\n    msg.statusCode = 200;\n    msg.payload = { datasets: out };\n    msg.headers = { 'Content-Type': 'application/json' };\n    node.send(msg);\n  } catch (e) {\n    const err = dspError(500, 'catalogue_unavailable', [String(e && e.message || e)]);\n    msg.statusCode = err.statusCode; msg.payload = err.payload;\n    node.send(msg);\n  }\n  node.done();\n})();\n",
+  "outputs": 1,
+  "wires": [
+   [
+    "n-res-cat"
+   ]
+  ]
+ },
+ {
+  "id": "n-res-cat",
+  "type": "http response",
+  "name": "",
+  "z": "tab-dsp",
+  "x": 580,
+  "y": 100
+ },
+ {
+  "id": "n-in-data",
+  "type": "http in",
+  "name": "POST /dsp/data",
+  "z": "tab-dsp",
+  "x": 100,
+  "y": 200,
+  "url": "/dsp/data",
+  "method": "post",
+  "wires": [
+   [
+    "n-fn-data"
+   ]
+  ]
+ },
+ {
+  "id": "n-fn-data",
+  "type": "function",
+  "name": "data plane DSP (HMAC D-3, rate limit, audit, LIMIT 5000)",
+  "z": "tab-dsp",
+  "x": 340,
+  "y": 200,
+  "func": "\nfunction pool(role) {\n  const { Pool } = require('pg');\n  const key = 'pgpool_' + role;\n  let p = global.get(key);\n  if (!p) {\n    p = new Pool({\n      host: env.get('PG_HOST') || 'postgres',\n      port: parseInt(env.get('PG_PORT') || '5432', 10),\n      database: env.get('PG_DB') || 'fap',\n      user: env.get('PG_' + role.toUpperCase() + '_USER') || role,\n      password: env.get('PG_' + role.toUpperCase() + '_PASSWORD') || '',\n      max: 5\n    });\n    global.set(key, p);\n  }\n  return p;\n}\n\nfunction dspError(status, code, reasons) {\n  return { statusCode: status, payload: {\n    '@context': 'https://w3id.org/dspace/2025/1/context.jsonld',\n    '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons } };\n}\n\n(async () => {\n  function fail(err) {\n    msg.statusCode = err.statusCode;\n    msg.payload = err.payload;\n    msg.headers = { 'Content-Type': 'application/json' };\n    node.send(msg);\n  }\n  try {\n    const crypto = require('crypto');\n    const fs = require('fs');\n    const h = msg.req.headers;\n    const sig = h['x-dsp-signature'];\n    const agreement = h['x-dsp-agreement'];\n    const ts = h['x-dsp-timestamp'];\n    const body = msg.payload || {};\n    const assetId = body.assetId, from = body.from, to = body.to;\n    const path = env.get('DSP_DATA_PATH') || '/dsp/data';\n\n    // 1. contrat présent (headers HMAC + body) — sinon 401\n    if (!sig || !agreement || !ts || !assetId || !from || !to) {\n      return fail(dspError(401, 'missing_credentials',\n        ['X-DSP-Signature, X-DSP-Agreement, X-DSP-Timestamp et body {assetId, from, to} requis']));\n    }\n    // 2. vérification HMAC — forme canonique D-3 (spec §9) :\n    //    sha256=HMAC_SHA256(secret, \"POST\\n{path}\\n{assetId}\\n{from}\\n{to}\\n{ts}\")\n    const secret = env.get('DSP_HMAC_SECRET') || '';\n    const canonical = ['POST', path, assetId, from, to, ts].join('\\n');\n    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');\n    const a = Buffer.from(String(sig)), b = Buffer.from(expected);\n    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {\n      return fail(dspError(403, 'invalid_signature', ['HMAC invalide']));\n    }\n    // 3. fenêtre from/to ISO 8601 — sinon 400\n    const ISO_RE = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$/;\n    if (!ISO_RE.test(from) || !ISO_RE.test(to)) {\n      return fail(dspError(400, 'invalid_window', ['from/to doivent être des timestamps ISO 8601']));\n    }\n    // 4. plan de contrôle : agreement connu et actif\n    const ag = await pool('admin').query(\n      'SELECT agreement_id, asset_id, rate_limit_per_min FROM public.dsp_agreements WHERE agreement_id = $1 AND active = true',\n      [agreement]);\n    if (ag.rowCount === 0) return fail(dspError(403, 'unknown_agreement', ['agreement_id inconnu ou inactif']));\n    const rateLimit = ag.rows[0].rate_limit_per_min || 10;\n    // 5. asset déclaré dans le catalogue (gold-only à l'ISO) — sinon 404\n    const datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));\n    const ds = (Array.isArray(datasets) ? datasets : []).find(d => d && d.id === assetId);\n    if (!ds || !ds.metadata || !ds.metadata.schema || !ds.metadata.table) {\n      return fail(dspError(404, 'asset_not_found', ['asset non déclaré dans le catalogue: ' + assetId]));\n    }\n    if (ag.rows[0].asset_id && ag.rows[0].asset_id !== assetId) {\n      return fail(dspError(403, 'agreement_not_covering_asset', [\"l'agreement ne couvre pas cet asset\"]));\n    }\n    const schema = ds.metadata.schema, table = ds.metadata.table, timeColumn = ds.metadata.timeColumn;\n    // 6. rate limit par offre (asset), fenêtre glissante 60 s — sinon 429 audité\n    const rl = await pool('admin').query(\n      \"SELECT count(*)::int AS n FROM public.dsp_access_audit WHERE asset_id = $1 AND status = 200 AND ts > now() - interval '60 seconds'\",\n      [assetId]);\n    if (rl.rows[0].n >= rateLimit) {\n      await pool('admin').query(\n        'INSERT INTO public.dsp_access_audit (agreement_id, asset_id, ts, status, path) VALUES ($1, $2, now(), 429, $3)',\n        [agreement, assetId, path]);\n      return fail(dspError(429, 'rate_limit_exceeded', ['rate limit ' + rateLimit + ' req/min par offre dépassé']));\n    }\n    // 7. data plane (rôle reader) : SELECT + fenêtre from/to + LIMIT 5000 (spec §C1.7)\n    const sql = 'SELECT * FROM ' + schema + '.' + table +\n      ' WHERE ' + timeColumn + ' >= $1::timestamptz AND ' + timeColumn + ' <= $2::timestamptz' +\n      ' ORDER BY ' + timeColumn + ' LIMIT 5000';\n    const q = await pool('reader').query(sql, [from, to]);\n    const columns = q.fields.map(f => f.name);\n    const rows = q.rows.map(r => columns.map(c => r[c]));\n    // 8. audit de l'accès (agreement_id, ts)\n    await pool('admin').query(\n      'INSERT INTO public.dsp_access_audit (agreement_id, asset_id, ts, status, path) VALUES ($1, $2, now(), 200, $3)',\n      [agreement, assetId, path]);\n    msg.statusCode = 200;\n    msg.payload = { assetId: assetId, schema: schema, table: table, columns: columns, rows: rows, rowCount: rows.length };\n    msg.headers = { 'Content-Type': 'application/json' };\n    node.send(msg);\n  } catch (e) {\n    node.error(e, msg);\n    fail(dspError(500, 'internal_error', [String(e && e.message || e)]));\n  }\n  node.done();\n})();\n",
+  "outputs": 1,
+  "wires": [
+   [
+    "n-res-data"
+   ]
+  ]
+ },
+ {
+  "id": "n-res-data",
+  "type": "http response",
+  "name": "",
+  "z": "tab-dsp",
+  "x": 580,
+  "y": 200
+ },
+ {
+  "id": "n-in-health",
+  "type": "http in",
+  "name": "GET /health",
+  "z": "tab-health",
+  "x": 100,
+  "y": 100,
+  "url": "/health",
+  "method": "get",
+  "wires": [
+   [
+    "n-fn-health"
+   ]
+  ]
+ },
+ {
+  "id": "n-fn-health",
+  "type": "function",
+  "name": "",
+  "z": "tab-health",
+  "x": 320,
+  "y": 100,
+  "func": "\nmsg.statusCode = 200;\nmsg.payload = { status: 'ok', service: 'fap-light-orce' };\nnode.send(msg);\nnode.done();\n",
+  "outputs": 1,
+  "wires": [
+   [
+    "n-res-health"
+   ]
+  ]
+ },
+ {
+  "id": "n-res-health",
+  "type": "http response",
+  "name": "",
+  "z": "tab-health",
+  "x": 520,
+  "y": 100
+ }
+]

@@ -1,0 +1,15 @@
+# Caddy — TLS frontal du serveur FAP-light (spec §3)
+# En local (FAP_DOMAIN=localhost) : certificat auto-signé (tls internal).
+# En production : FAP_DOMAIN=<vrai domaine> -> certificats Let's Encrypt auto.
+{
+	auto_https off
+}
+
+{$FAP_DOMAIN:localhost} {
+	tls internal
+	reverse_proxy orce:1880
+}
+
+:80 {
+	redir https://{$FAP_DOMAIN:localhost}{uri} permanent
+}

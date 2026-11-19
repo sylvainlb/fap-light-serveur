@@ -1,0 +1,61 @@
+{
+  "realm": "fap-light",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "fap-light-ui",
+      "name": "UI ORCE FAP-light (OIDC)",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": ["http://localhost:1880/*", "https://localhost/*"],
+      "webOrigins": ["http://localhost:1880", "https://localhost"],
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "webid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "webid",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "webid",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "gestionnaire",
+      "enabled": true,
+      "email": "gestionnaire@example.local",
+      "firstName": "Gestionnaire",
+      "lastName": "Parc",
+      "attributes": {
+        "webid": ["https://id.example.local/gestionnaire#me"]
+      },
+      "credentials": [
+        { "type": "password", "value": "change-me", "temporary": true }
+      ],
+      "realmRoles": ["gestionnaire"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "gestionnaire" },
+      { "name": "technicien" },
+      { "name": "admin" }
+    ]
+  }
+}

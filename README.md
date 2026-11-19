@@ -16,6 +16,17 @@ mêmes contrats de données et de protocoles que la FAP-full, sans Kafka / NiFi 
 ```
 fap-light-serveur/
 ├── README.md                  ← ce fichier
+├── docker-compose.yml         ← stack 1 VM : postgres + orce + mosquitto + sftp + caddy + keycloak
+├── .env.example               ← variables (mots de passe rôles PG, secret HMAC DSP, …)
+├── deploy/
+│   ├── postgres/              ← image PG16 + pg_cron ; init SQL (rôles, schémas, gate, vues, matviews, cron)
+│   │   └── init/              ← 01_roles 02_core 03_silver_views 04_gold_matviews 05_pg_cron
+│   ├── orce/                  ← image ORCE (Node-RED) + flows (flows_gen.py -> data/flows.json)
+│   │   └── data/              ← settings.js, flows.json, package.json, dsp-config/datasets.json
+│   ├── caddy/  mosquitto/  keycloak/  sftp/
+├── materializers/
+│   └── silver_materializer.py ← CLI watermark / --full-refresh (CI ; en prod pg_cron tourne à */10 min)
+├── scripts/                   ← deploy.sh, wait-healthy.sh, backup.sh (pg_dump + WAL, SPOF assumé)
 └── tck/                       ← kit de conformité serveur (TCK), dérivé du §10 de la spec
     ├── README.md              ← mode d'emploi du TCK
     ├── run-tck.sh             ← point d'entrée
@@ -29,6 +40,29 @@ fap-light-serveur/
         ├── fixtures/          ← jeux de données de test (simulation, SFTP)
         └── suites/            ← une suite par critère d'acceptation CA-S1..CA-S8
 ```
+
+## Déploiement (1 VM)
+
+```bash
+cp .env.example .env        # éditer les secrets (rôles PG, DSP_HMAC_SECRET, …)
+./scripts/deploy.sh         # build + up + attente santé
+# ORCE http://localhost:1880 | PG localhost:5432 | MQTT :1883 | SFTP :2222 | IdP :8080 | caddy https://$FAP_DOMAIN
+./scripts/backup.sh         # pg_dump horodaté (backups/) — WAL continu à activer en production
+```
+
+Architecture implémentée (spec §3) : ORCE (Node-RED) en gate devant PostgreSQL —
+jamais de SQL direct des sources. Les sources (simulation `POST /ingest/sim` + tick 60 s,
+SFTP cycle 60 s, pont MQTT QoS par route) passent par les fonctions gate
+(`public.gate_ingest` / `gate_reject`, appelées avec le rôle `gate`) qui valident
+l'enveloppe (champs obligatoires, types, bornes, taille → OK/DLQ) puis insèrent en
+`bronze.*` (JSONB + lineage, décision D-2). Routage sur le champ `type` de
+l'enveloppe (décision D-1). `silver.*` = vues typées (CAST + filtres qualité),
+`gold.*` = matviews rafraîchies par pg_cron (*/10 min), watermarks dans
+`silver._watermarks`. Rôles PG : `gate` (INSERT bronze only), `reader` (lecture gold),
+`app` (app.*), `admin`. Catalogue DSP auto-dérivé (gold ∩ `datasets.json`,
+`format: postgres`) ; data plane `POST /dsp/data` (HMAC D-3, rate limit 10/min/offre,
+audit `dsp_access_audit`, `SELECT` + from/to + LIMIT 5000, erreurs JSON-LD
+`dspace:Error`). IdP : Keycloak 26.x (décision D-4). caddy en TLS frontal.
 
 ## Critères d'acceptation couverts (spec §10)
 

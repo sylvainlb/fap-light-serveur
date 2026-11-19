@@ -1,0 +1,125 @@
+# ============================================================================
+# FAP-light — serveur sur 1 VM (spec §C1.1) : PostgreSQL + ORCE + caddy + IdP
+#   + mosquitto (broker MQTT local) + serveur SFTP de test.
+# Démarrage : cp .env.example .env (éditer) puis ./scripts/deploy.sh
+# ============================================================================
+name: fap-light
+
+services:
+  # ---------------------------------------------------------- PostgreSQL
+  postgres:
+    build: ./deploy/postgres
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD requis dans .env}
+      POSTGRES_DB: fap
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?requis}
+      DSP_AGREEMENT_ID: ${DSP_AGREEMENT_ID:-agreement:tck:ca-s4}
+    # pg_cron préchargé (materializers in-database, spec §C1.5)
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "pg_cron.database_name=fap"]
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d fap"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ---------------------------------------------------------- ORCE (Node-RED)
+  orce:
+    build: ./deploy/orce
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: fap
+      PG_GATE_USER: gate
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
+      PG_READER_USER: reader
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
+      PG_ADMIN_USER: admin
+      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:?requis}
+      DSP_HMAC_SECRET: ${DSP_HMAC_SECRET:?requis}
+      DSP_DATA_PATH: /dsp/data
+      DSP_DATASETS_PATH: /data/dsp-config/datasets.json
+      SIM_SITE_ID: ${SIM_SITE_ID:-site-berlin-001}
+      SIM_SEED: ${SIM_SEED:-fap-light}
+      SFTP_HOST: ${SFTP_HOST:-sftp}
+      SFTP_PORT: ${SFTP_PORT:-22}
+      SFTP_USER: ${SFTP_USER:-fap}
+      SFTP_PASSWORD: ${SFTP_PASSWORD:-}
+      SFTP_INGEST_DIR: ${SFTP_INGEST_DIR:-/ingest}
+      SFTP_ARCHIVE_DIR: ${SFTP_ARCHIVE_DIR:-/archive}
+      SFTP_MAX_BYTES: ${SFTP_MAX_BYTES:-1048576}
+    ports:
+      - "${ORCE_PORT:-1880}:1880"
+    volumes:
+      - orce-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------- broker MQTT
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+
+  # ---------------------------------------------------------- serveur SFTP (source externe)
+  sftp:
+    image: atmoz/sftp:latest
+    restart: unless-stopped
+    command: "${SFTP_USER:-fap}:${SFTP_PASSWORD:-}:::ingest,archive"
+    ports:
+      - "${SFTP_PUBLISHED_PORT:-2222}:22"
+    volumes:
+      - ./deploy/sftp/authorized_keys:/etc/ssh/authorized_keys:ro
+      - sftp-data:/home/${SFTP_USER:-fap}
+
+  # ---------------------------------------------------------- caddy (TLS frontal)
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      FAP_DOMAIN: ${FAP_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - orce
+
+  # ---------------------------------------------------------- IdP (Keycloak 26.x, décision D-4)
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      TZ: UTC
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?requis}
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
+
+volumes:
+  pg-data:
+  orce-data:
+  sftp-data:
+  caddy-data:
+  caddy-config:
