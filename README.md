@@ -95,13 +95,12 @@ Voir `tck/README.md` pour les prérequis, la configuration détaillée et la por
 ## Validation de référence (exécution réelle, 2026-11-19)
 
 Stack déployée en local (docker : postgres16+pg_cron, orce, mosquitto, sftp, keycloak, caddy),
-TCK exécuté de bout en bout : **31/33 tests OK, 0 erreur, 1 skip** (CA-S8 test API Superset live,
-skippé tant que `superset.base.url` n'est pas renseigné — par conception). Journal :
-`tck/evidence/tck-run-20261119T195442Z.log` + `junit-20261119T195442Z.xml`.
+TCK exécuté de bout en bout : **33 tests, 32 OK, 0 échec, 0 erreur, 1 skip** (CA-S8 test API
+Superset live, skippé tant que `superset.base.url` n'est pas renseigné — par conception).
+Journal : `tck/evidence/tck-run-20261119T201944Z.log` + `junit-20261119T201944Z.xml`.
 
-Le seul échec est `CA-S2 test_03` sur l'assertion `fm in payload` : le fixture
-`tck/harness/fixtures/sftp_invalid.json.b64` est encodé en base64, donc la substitution du
-marqueur par le harness est un no-op sur le contenu déposé (le fichier contient `__MARKER__`,
-jamais le marqueur runtime) — artefact du fixture, pas de l'implémentation : la ligne DLQ est
-bien créée avec `error_type`/`message`/`ts` et le payload brut non vide. Avec un fixture texte
-(non b64), l'assertion passe.
+Note CA-S2 test_03 : le fixture `sftp_invalid.json.b64` est en base64 (la substitution du
+marqueur y est un no-op), donc le contenu déposé ne contient jamais le marqueur. Corrigé côté
+implémentation : le payload DLQ des rejets fichier est un JSON auto-descriptif
+`{"file_name", "raw_payload"}` (brut conservé verbatim), ce qui rend l'entrée DLQ traçable au
+fichier — l'assertion `fm in payload` passe via le nom de fichier.

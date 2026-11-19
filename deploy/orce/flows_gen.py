@@ -165,10 +165,10 @@ function coerceCsvRow(r) {
       const remote = ingestDir + '/' + name;
       let buf = null;
       try {
+        buf = await sftp.get(remote);   // lu avant la garde : le DLQ garde le brut même en cas de rejet
         if (!/\\.(json|csv)$/i.test(name)) {
           const e = new Error('extension non autorisée (attendu .json/.csv)'); e.code = 'bad_extension'; throw e;
         }
-        buf = await sftp.get(remote);
         if (buf.length > maxBytes) {
           const e = new Error('taille > ' + maxBytes + ' octets'); e.code = 'file_too_large'; throw e;
         }
@@ -186,7 +186,8 @@ function coerceCsvRow(r) {
       } catch (e) {
         try {
           await p.query('SELECT public.gate_reject($1,$2,$3,$4,$5) AS r',
-            [e.code || 'parse_error', String(e && e.message || e), buf ? buf.toString('utf8') : '', name, 'sftp:' + name]);
+            [e.code || 'parse_error', String(e && e.message || e),
+             JSON.stringify({ file_name: name, raw_payload: buf ? buf.toString('utf8') : '' }), name, 'sftp:' + name]);
         } catch (e2) { node.error(e2, msg); }
       }
       try { await sftp.rename(remote, archiveDir + '/' + name); }
