@@ -32,6 +32,14 @@ docker compose up -d --build
 echo "[deploy] attente de la santé des services…"
 ./scripts/wait-healthy.sh
 
+# Installe la clé publique TCK dans le chroot SFTP (sshd lit .ssh/authorized_keys
+# dans le chroot %h ; le montage /etc/ssh/authorized_keys seul ne suffit pas).
+if docker compose ps sftp --format json 2>/dev/null | grep -q Running; then
+  docker compose exec -T sftp sh -c \
+    "mkdir -p /home/$SFTP_USER/.ssh && cp /etc/ssh/authorized_keys/$SFTP_USER /home/$SFTP_USER/.ssh/authorized_keys && chown -R 1000:100 /home/$SFTP_USER/.ssh && chmod 700 /home/$SFTP_USER/.ssh && chmod 600 /home/$SFTP_USER/.ssh/authorized_keys" \
+    && echo "[deploy] clé publique SFTP installée pour l'utilisateur $SFTP_USER"
+fi
+
 echo
 echo "[deploy] FAP-light démarré :"
 echo "  ORCE (Node-RED)     : http://localhost:${ORCE_PORT:-1880}"

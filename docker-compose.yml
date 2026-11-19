@@ -20,7 +20,7 @@ services:
       PG_APP_PASSWORD: ${PG_APP_PASSWORD:?requis}
       DSP_AGREEMENT_ID: ${DSP_AGREEMENT_ID:-agreement:tck:ca-s4}
     # pg_cron préchargé (materializers in-database, spec §C1.5)
-    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "pg_cron.database_name=fap"]
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=fap"]
     ports:
       - "${PG_PORT:-5432}:5432"
     volumes:
@@ -31,6 +31,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  # One-shot : applique 05_pg_cron.sql (extension + jobs) une fois le serveur
+  # démarré — pendant l'init, le serveur temporaire n'a pas cron.database_name.
+  # Idempotent, rejouable sans risque.
+  init-pg-cron:
+    build: ./deploy/postgres
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: admin
+      PGPASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD requis dans .env}
+      PGDATABASE: fap
+    volumes:
+      - ./deploy/postgres/init:/init:ro
+    command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/init/sql/05_pg_cron.sql"]
 
   # ---------------------------------------------------------- ORCE (Node-RED)
   orce:

@@ -87,3 +87,21 @@ cp tck.properties tck.properties.local   # adapter la cible
 ```
 
 Voir `tck/README.md` pour les prérequis, la configuration détaillée et la portée exacte de chaque test.
+
+> Note : le parser de `tck.properties` garde les commentaires inline (`cle=valeur # comment`) —
+> surcharger les clés concernées par des variables d'env `TCK_*` (ex. `TCK_DATA_LIMIT=5000`) plutôt
+> que d'éditer le fichier.
+
+## Validation de référence (exécution réelle, 2026-11-19)
+
+Stack déployée en local (docker : postgres16+pg_cron, orce, mosquitto, sftp, keycloak, caddy),
+TCK exécuté de bout en bout : **31/33 tests OK, 0 erreur, 1 skip** (CA-S8 test API Superset live,
+skippé tant que `superset.base.url` n'est pas renseigné — par conception). Journal :
+`tck/evidence/tck-run-20261119T195442Z.log` + `junit-20261119T195442Z.xml`.
+
+Le seul échec est `CA-S2 test_03` sur l'assertion `fm in payload` : le fixture
+`tck/harness/fixtures/sftp_invalid.json.b64` est encodé en base64, donc la substitution du
+marqueur par le harness est un no-op sur le contenu déposé (le fichier contient `__MARKER__`,
+jamais le marqueur runtime) — artefact du fixture, pas de l'implémentation : la ligne DLQ est
+bien créée avec `error_type`/`message`/`ts` et le payload brut non vide. Avec un fixture texte
+(non b64), l'assertion passe.

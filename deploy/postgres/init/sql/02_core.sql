@@ -299,8 +299,12 @@ $$;
 -- ---------------------------------------------------------------------------
 
 -- gate : INSERT bronze only, EXECUTE sur la gate, aucune lecture.
+-- (USAGE/SELECT sur les séquences : nécessaire pour les colonnes bigserial)
+GRANT USAGE ON SCHEMA bronze TO gate;
 GRANT INSERT ON ALL TABLES IN SCHEMA bronze TO gate;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA bronze TO gate;
 ALTER DEFAULT PRIVILEGES IN SCHEMA bronze GRANT INSERT ON TABLES TO gate;
+ALTER DEFAULT PRIVILEGES IN SCHEMA bronze GRANT USAGE, SELECT ON SEQUENCES TO gate;
 REVOKE EXECUTE ON FUNCTION public.gate_ingest(text, jsonb, text, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.gate_reject(text, text, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public._gate_cursor(text, text, text) FROM PUBLIC;
@@ -316,8 +320,42 @@ GRANT ALL ON ALL TABLES IN SCHEMA app TO app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT ALL ON TABLES TO app;
 
 -- ---------------------------------------------------------------------------
--- silver_tick() : avance les watermarks silver depuis bronze (spec §C1.5, CA-S6)
+-- Watermark silver : tenu à jour à chaque INSERT bronze (trigger) + par
+-- silver_tick() via pg_cron toutes les 10 min (spec §C1.5). Le trigger rend
+-- l'avancement déterministe (CA-S6) ; le cron reste la cadence nominale.
 -- Watermark stocké en texte ISO 8601 UTC (comparaison lexicale sûre).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bronze_watermark_trigger() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, silver, pg_temp
+AS $$
+DECLARE
+  v_wm text;
+BEGIN
+  v_wm := to_char(NEW.ingest_timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  INSERT INTO silver._watermarks (key, watermark, updated_at)
+  VALUES ('silver.' || TG_TABLE_NAME, v_wm, now())
+  ON CONFLICT (key) DO UPDATE
+    SET watermark = GREATEST(silver._watermarks.watermark, EXCLUDED.watermark),
+        updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['energy_meter','pv_generation','weather','energy_price',
+                          'consumer_load','streetlight','traffic','city_event','city_weather']
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_wm_%I ON bronze.%I', t, t);
+    EXECUTE format('CREATE TRIGGER trg_wm_%I AFTER INSERT ON bronze.%I FOR EACH ROW EXECUTE FUNCTION public.bronze_watermark_trigger()', t, t);
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- silver_tick() : avance les watermarks silver depuis bronze (spec §C1.5, CA-S6)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.silver_tick() RETURNS void
 LANGUAGE plpgsql

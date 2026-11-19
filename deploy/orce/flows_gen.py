@@ -23,7 +23,7 @@ from pathlib import Path
 # ---------------------------------------------------------------- helpers JS
 JS_POOL = """
 function pool(role) {
-  const { Pool } = require('pg');
+  const { Pool } = pgLib;
   const key = 'pgpool_' + role;
   let p = global.get(key);
   if (!p) {
@@ -91,7 +91,6 @@ FN_GATE_SIM = JS_POOL + JS_SIM_TOPIC + """
 FN_SIM_CYCLE = JS_POOL + JS_SIM_TOPIC + """
 (async () => {
   try {
-    const seedrandom = require('seedrandom');
     const site = env.get('SIM_SITE_ID') || 'site-berlin-001';
     const now = new Date().toISOString();
     const rnd = seedrandom((env.get('SIM_SEED') || 'fap-light') + now.slice(0, 13));
@@ -141,14 +140,12 @@ function coerceCsvRow(r) {
   for (const k of Object.keys(r)) {
     const v = r[k];
     if (v === null || v === undefined || v === '') { out[k] = v; continue; }
-    if (/(_kw|_w|_kwh|_c|_pct|_ms|_v|_a|_hz|_eur_kwh|_count|_level|_factor)$/.test(k) && !isNaN(Number(v))) out[k] = Number(v);
+    if (/(_kw|_w|_kwh|_total|_c|_pct|_ms|_v|_a|_hz|_eur_kwh|_count|_level|_factor)$/.test(k) && !isNaN(Number(v))) out[k] = Number(v);
     else out[k] = v;
   }
   return out;
 }
 (async () => {
-  const Sftp = require('ssh2-sftp-client');
-  const { parse } = require('csv-parse/sync');
   const sftp = new Sftp();
   try {
     await sftp.connect({
@@ -177,7 +174,7 @@ function coerceCsvRow(r) {
         }
         let payloads;
         if (/\\.csv$/i.test(name)) {
-          payloads = parse(buf.toString('utf8'), { columns: true, skip_empty_lines: true }).map(coerceCsvRow);
+          payloads = csvSync.parse(buf.toString('utf8'), { columns: true, skip_empty_lines: true }).map(coerceCsvRow);
         } else {
           payloads = [JSON.parse(buf.toString('utf8'))];
         }
@@ -228,7 +225,6 @@ FN_MQTT_GATE = JS_POOL + """
 FN_CATALOGUE = JS_POOL + JS_DSP_ERROR + """
 (async () => {
   try {
-    const fs = require('fs');
     const datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));
     // auto-dérivation depuis le catalogue PG (gold uniquement à l'ISO, spec §C1.6) :
     // on ne publie que les tables gold EXISTANTES (visibles par le rôle reader)
@@ -262,8 +258,6 @@ FN_DATAPLANE = JS_POOL + JS_DSP_ERROR + """
     node.send(msg);
   }
   try {
-    const crypto = require('crypto');
-    const fs = require('fs');
     const h = msg.req.headers;
     const sig = h['x-dsp-signature'];
     const agreement = h['x-dsp-agreement'];
@@ -377,15 +371,16 @@ def wire(src, dst):
 
 # --- ingest-sim
 add(node("n-in-sim", "http in", "POST /ingest/sim", "tab-ingest-sim", 100, 100, url="/ingest/sim", method="post"))
-add(node("n-fn-gate-sim", "function", "gate -> bronze (role gate)", "tab-ingest-sim", 320, 100, func=FN_GATE_SIM, outputs=1))
+add(node("n-fn-gate-sim", "function", "gate -> bronze (role gate)", "tab-ingest-sim", 320, 100, func=FN_GATE_SIM, outputs=1, libs=[{"module":"pg","var":"pgLib"}]))
 add(node("n-res-sim", "http response", "", "tab-ingest-sim", 560, 100))
 add(node("n-sim-tick", "inject", "tick simulation 60s", "tab-ingest-sim", 100, 180, repeat="60", once=True, onceDelay=5))
-add(node("n-fn-sim", "function", "génère 9 feeds (seedrandom) -> gate", "tab-ingest-sim", 340, 180, func=FN_SIM_CYCLE, outputs=1))
+add(node("n-fn-sim", "function", "génère 9 feeds (seedrandom) -> gate", "tab-ingest-sim", 340, 180, func=FN_SIM_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"seedrandom","var":"seedrandom"}]))
 wire("n-in-sim", "n-fn-gate-sim"); wire("n-fn-gate-sim", "n-res-sim"); wire("n-sim-tick", "n-fn-sim")
 
 # --- ingest-sftp
 add(node("n-sftp-tick", "inject", "cycle SFTP 60s", "tab-ingest-sftp", 100, 100, repeat="60", once=True, onceDelay=10))
-add(node("n-fn-sftp", "function", "poll /ingest -> garde -> parse -> gate -> archive + curseur", "tab-ingest-sftp", 380, 100, func=FN_SFTP_CYCLE, outputs=1))
+add(node("n-fn-sftp", "function", "poll /ingest -> garde -> parse -> gate -> archive + curseur", "tab-ingest-sftp", 380, 100, func=FN_SFTP_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"ssh2-sftp-client","var":"Sftp"},{"module":"csv-parse/sync","var":"csvSync"}]))
+wire("n-sftp-tick", "n-fn-sftp")
 
 # --- ingest-mqtt
 add(node("n-mqtt-broker", "mqtt-broker", "mosquitto", "tab-ingest-mqtt", 0, 0,
@@ -402,7 +397,7 @@ MQTT_ROUTES = [  # (topic, qos) — QoS par route : meter/prices/pv = 1, weather
     ("facis/city/weather/+", "0"),
 ]
 add(node("n-fn-mqtt", "function", "MQTT -> enveloppe -> gate (source_topic = topic d'origine, D-1)",
-         "tab-ingest-mqtt", 380, 300, func=FN_MQTT_GATE, outputs=1))
+         "tab-ingest-mqtt", 380, 300, func=FN_MQTT_GATE, outputs=1, libs=[{"module":"pg","var":"pgLib"}]))
 for i, (topic, qos) in enumerate(MQTT_ROUTES):
     add(node(f"n-mqtt-{i}", "mqtt in", topic, "tab-ingest-mqtt", 120, 100 + i * 60,
              topic=topic, qos=qos, broker="n-mqtt-broker"))
@@ -410,10 +405,10 @@ for i, (topic, qos) in enumerate(MQTT_ROUTES):
 
 # --- dsp
 add(node("n-in-cat", "http in", "POST /dsp/catalogue/request", "tab-dsp", 100, 100, url="/dsp/catalogue/request", method="post"))
-add(node("n-fn-cat", "function", "catalogue DSP (auto-dérivé gold ∩ datasets.json)", "tab-dsp", 340, 100, func=FN_CATALOGUE, outputs=1))
+add(node("n-fn-cat", "function", "catalogue DSP (auto-dérivé gold ∩ datasets.json)", "tab-dsp", 340, 100, func=FN_CATALOGUE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"fs","var":"fs"}]))
 add(node("n-res-cat", "http response", "", "tab-dsp", 580, 100))
 add(node("n-in-data", "http in", "POST /dsp/data", "tab-dsp", 100, 200, url="/dsp/data", method="post"))
-add(node("n-fn-data", "function", "data plane DSP (HMAC D-3, rate limit, audit, LIMIT 5000)", "tab-dsp", 340, 200, func=FN_DATAPLANE, outputs=1))
+add(node("n-fn-data", "function", "data plane DSP (HMAC D-3, rate limit, audit, LIMIT 5000)", "tab-dsp", 340, 200, func=FN_DATAPLANE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"crypto","var":"crypto"},{"module":"fs","var":"fs"}]))
 add(node("n-res-data", "http response", "", "tab-dsp", 580, 200))
 wire("n-in-cat", "n-fn-cat"); wire("n-fn-cat", "n-res-cat")
 wire("n-in-data", "n-fn-data"); wire("n-fn-data", "n-res-data")

@@ -7,4 +7,4 @@ RUN apt-get update \
 
 # pg_cron doit être préchargé (shared_preload_libraries) — passé via la commande
 # du service dans docker-compose.yml :
-#   postgres -c shared_preload_libraries=pg_cron -c pg_cron.database_name=fap
+#   postgres -c shared_preload_libraries=pg_cron -c cron.database_name=fap
