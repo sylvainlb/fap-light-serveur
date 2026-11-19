@@ -1,0 +1,14 @@
+# Evidence TCK (logs, rapports JUnit) — générés à l'exécution
+tck/evidence/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets locaux
+*.local.properties
+.env
+*.pem
+*.key

@@ -1,0 +1,2 @@
+ce fichier n'est pas un .json ni un .csv : il doit être rejeté par la garde extension avant parsing
+meter_id=__MARKER__

@@ -1,0 +1,15 @@
+{
+  "type": "smart_energy.meter",
+  "schema_version": "1.0",
+  "timestamp": "__TS__",
+  "site_id": "__SITE__",
+  "meter_id": "__MARKER__",
+  "asset_id": "__MARKER__",
+  "active_power_kw": 7.5,
+  "active_energy_kwh_total": 1000.0,
+  "readings": {
+    "active_power_l1_w": 2500.0,
+    "active_power_l2_w": 2500.0,
+    "active_power_l3_w": 2500.0
+  }
+}

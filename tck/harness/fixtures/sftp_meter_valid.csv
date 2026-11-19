@@ -1,0 +1,2 @@
+type,schema_version,timestamp,site_id,meter_id,asset_id,active_power_kw,active_energy_kwh_total
+smart_energy.meter,1.0,__TS__,__SITE__,__MARKER__,__MARKER__,3.21,777.0

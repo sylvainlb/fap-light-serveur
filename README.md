@@ -1,0 +1,54 @@
+# FAP-light — Serveur (étape 1)
+
+Dépôt du chantier **serveur FAP-light** (profil light de l'architecture FAP, périmètre ISO FACIS) :
+un serveur de données déployable sur **1 VM** (PostgreSQL + ORCE/Node-RED + caddy + IdP), exposant les
+mêmes contrats de données et de protocoles que la FAP-full, sans Kafka / NiFi / Trino / Iceberg / Stackable.
+
+- **Spécification** : `../spec/fap-light-spec-serveur.md` (version 0.1, brouillon de travail)
+- **Références** : synthèse d'architecture FAP (`../spec/facis-fap-architecture-synthese.md`),
+  profils (`../spec/fap-domaine-app-et-profils.md`), cas d'usage
+  (`../spec/supervision-energetique-spec-fonctionnelle.md`), implémentation full de référence
+  `/home/sylvain/facis/facis-fap-iot-ai`.
+
+## Contenu du dépôt
+
+```
+fap-light-serveur/
+├── README.md                  ← ce fichier
+└── tck/                       ← kit de conformité serveur (TCK), dérivé du §10 de la spec
+    ├── README.md              ← mode d'emploi du TCK
+    ├── run-tck.sh             ← point d'entrée
+    ├── tck.properties         ← configuration de la cible testée (endpoints, rôles PG, timeouts…)
+    ├── expected/
+    │   ├── datasets.json      ← assets gold attendus dans le catalogue DSP (format postgres)
+    │   └── superset_queries.sql ← requêtes exactes des dashboards Superset (CA-S8)
+    └── harness/
+        ├── runner.py          ← découverte/exécution des suites, rapport JUnit + evidence log
+        ├── target.py          ← clients psql / HTTP / SFTP / HMAC vers la cible
+        ├── fixtures/          ← jeux de données de test (simulation, SFTP)
+        └── suites/            ← une suite par critère d'acceptation CA-S1..CA-S8
+```
+
+## Critères d'acceptation couverts (spec §10)
+
+| CA | Énoncé (résumé) | Suite de test |
+|----|-----------------|---------------|
+| CA-S1 | Donnée simulation `sim.*` : bronze → silver (≤ 10 min) → gold, lineage complète | `tck/harness/suites/test_ca_s1_ingestion_simulation.py` |
+| CA-S2 | Fichier SFTP ingéré (cycle 60 s), archivé, curseur ; fichier invalide → DLQ (`error_type`/`message`/`ts`) | `tck/harness/suites/test_ca_s2_ingestion_sftp.py` |
+| CA-S3 | Catalogue DSP = exactement les assets gold déclarés, avec `policySummary` ; non déclaré = absent | `tck/harness/suites/test_ca_s3_catalogue_dsp.py` |
+| CA-S4 | Data plane : `{assetId, schema, table, columns, rows, rowCount}`, fenêtre from/to, LIMIT 5000 ; sans contrat → 401/403 `dspace:Error` | `tck/harness/suites/test_ca_s4_data_plane.py` |
+| CA-S5 | Rate limit 10 req/min par offre ; accès audités (`agreement_id`) | `tck/harness/suites/test_ca_s5_rate_limit_audit.py` |
+| CA-S6 | Watermark silver avance ; `--full-refresh` rejoue tout le silver depuis bronze | `tck/harness/suites/test_ca_s6_watermarks_full_refresh.py` |
+| CA-S7 | Rôles PG : `gate` sans lecture, `reader` sans écriture | `tck/harness/suites/test_ca_s7_roles_pg.py` |
+| CA-S8 | Dashboards Superset gold sur Postgres sans modification des requêtes | `tck/harness/suites/test_ca_s8_superset_gold.py` |
+
+## Démarrage rapide du TCK
+
+```bash
+cd tck
+cp tck.properties tck.properties.local   # adapter la cible
+./run-tck.sh --properties tck.properties.local
+# evidence : tck/evidence/tck-run-<stamp>.log + junit-<stamp>.xml
+```
+
+Voir `tck/README.md` pour les prérequis, la configuration détaillée et la portée exacte de chaque test.
