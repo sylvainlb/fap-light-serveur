@@ -1,0 +1,31 @@
+# fap-core-contracts v1.0 — coutures stables du cœur FAP consommées par FAP-LDP
+# (spec fap-ldp v0.3 §1.4). Publié côté cœur : fap-light-serveur/contracts/.
+# Toute évolution de ces contrats passe à v1.1+ (rétrocompatible) ou v2.0 (breaking).
+apiVersion: fap.facis/contracts/v1
+kind: CoreContracts
+metadata:
+  name: fap-core-contracts
+  version: "1.0"
+spec:
+  contracts:
+    - id: message-envelope
+      version: "1.0"
+      summary: "Enveloppe de message unifiée (champs type, source, timestamp, payload) — routage gate par le champ type"
+    - id: bronze-line-contract
+      version: "1.0"
+      summary: "Contrat de ligne bronze : raw_payload JSONB + lineage (source_topic, source_system, ingest_timestamp, message_key, source_seq)"
+    - id: named-schema-transforms
+      version: "1.0"
+      summary: "Transformations SQL sur schémas nommés bronze/silver/gold (+ app en extension) — mêmes noms, même SQL, PG (light) ou Trino (full)"
+    - id: dsp-exposure-protocols
+      version: "1.0"
+      summary: "Protocoles d'exposition DSP/LDP + catalogue auto-dérivé d'information_schema + VC/accords"
+    - id: trino-read-api
+      version: "1.0"
+      summary: "Lecture gold via Trino en profil full — même endpoint/auth/format que le data plane cœur (SELECT … WHERE pk = … LIMIT 1)"
+    - id: dsp-control-plane-api
+      version: "1.0"
+      summary: "Lookup contrat → capacité TTL → policy + audit (agreement_id). FAP-LDP consulte sans réimplémenter (synthèse §4.1)"
+  notes:
+    - "Le cœur FAP (fap-light-serveur) ne dépend pas de FAP-LDP ; ces contrats sont unidirectionnels cœur → extension."
+    - "Le data plane DSP v1 reste HMAC + agreement_id (décision D-3 du cœur) ; la VC du header Authorization est lue par le plan de contrôle."
