@@ -4,7 +4,8 @@ Dépôt du chantier **serveur FAP-light** (profil light de l'architecture FAP, p
 un serveur de données déployable sur **1 VM** (PostgreSQL + ORCE/Node-RED + caddy + IdP), exposant les
 mêmes contrats de données et de protocoles que la FAP-full, sans Kafka / NiFi / Trino / Iceberg / Stackable.
 
-- **Spécification** : `../spec/fap-light-spec-serveur.md` (version 0.1, brouillon de travail)
+- **Spécification** : `../spec/fap-light-spec-serveur.md` (version 0.2 — décisions D-1..D-6 actées en §9 :
+  nommage MQTT, lineage bronze sans Kafka, auth data plane HMAC, IdP Keycloak 26.x, `format: postgres`)
 - **Références** : synthèse d'architecture FAP (`../spec/facis-fap-architecture-synthese.md`),
   profils (`../spec/fap-domaine-app-et-profils.md`), cas d'usage
   (`../spec/supervision-energetique-spec-fonctionnelle.md`), implémentation full de référence
