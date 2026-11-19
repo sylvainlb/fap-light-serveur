@@ -187,7 +187,7 @@ function coerceCsvRow(r) {
         try {
           await p.query('SELECT public.gate_reject($1,$2,$3,$4,$5) AS r',
             [e.code || 'parse_error', String(e && e.message || e),
-             JSON.stringify({ file_name: name, raw_payload: buf ? buf.toString('utf8') : '' }), name, 'sftp:' + name]);
+             buf ? buf.toString('utf8') : '', name, 'sftp:' + name]);
         } catch (e2) { node.error(e2, msg); }
       }
       try { await sftp.rename(remote, archiveDir + '/' + name); }

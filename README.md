@@ -97,10 +97,9 @@ Voir `tck/README.md` pour les prérequis, la configuration détaillée et la por
 Stack déployée en local (docker : postgres16+pg_cron, orce, mosquitto, sftp, keycloak, caddy),
 TCK exécuté de bout en bout : **33 tests, 32 OK, 0 échec, 0 erreur, 1 skip** (CA-S8 test API
 Superset live, skippé tant que `superset.base.url` n'est pas renseigné — par conception).
-Journal : `tck/evidence/tck-run-20261119T201944Z.log` + `junit-20261119T201944Z.xml`.
+Journal : `tck/evidence/tck-run-20261119T210657Z.log` + `junit-20261119T210657Z.xml`.
 
-Note CA-S2 test_03 : le fixture `sftp_invalid.json.b64` est en base64 (la substitution du
-marqueur y est un no-op), donc le contenu déposé ne contient jamais le marqueur. Corrigé côté
-implémentation : le payload DLQ des rejets fichier est un JSON auto-descriptif
-`{"file_name", "raw_payload"}` (brut conservé verbatim), ce qui rend l'entrée DLQ traçable au
-fichier — l'assertion `fm in payload` passe via le nom de fichier.
+Note CA-S2 test_03 : le fixture `sftp_invalid.json` est un fichier texte brut volontairement
+invalide (la substitution du marqueur `__MARKER__` y est effective), donc le contenu déposé
+contient le marqueur. Le payload DLQ des rejets fichier est le brut pur (colonne `payload`),
+lu avant toute garde — l'assertion `fm in payload` passe via le contenu brut lui-même.

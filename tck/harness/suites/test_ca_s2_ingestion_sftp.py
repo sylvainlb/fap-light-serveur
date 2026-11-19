@@ -8,7 +8,6 @@ se confondre avec l'injection simulation de CA-S1.
 
 from __future__ import annotations
 
-import base64
 import tempfile
 from pathlib import Path
 
@@ -39,12 +38,6 @@ class CaS2IngestionSftp(TckTestCase):
     def _deposit_fixture(self, fixture: str, remote_name: str, file_marker: str) -> str:
         content = self.t.fixture(fixture, MARKER=file_marker, SITE=self.site, TS=self.now_iso())
         return self._deposit_text(content, remote_name)
-
-    def _deposit_b64(self, fixture_b64: str, remote_name: str, file_marker: str) -> str:
-        raw = base64.b64decode(
-            self.t.fixture(fixture_b64, MARKER=file_marker, SITE=self.site, TS=self.now_iso()).strip()
-        ).decode()
-        return self._deposit_text(raw, remote_name)
 
     # ------------------------------------------------------- fichier valide
     def test_01_fichier_json_valide_ingere_archive_curseur(self):
@@ -80,7 +73,7 @@ class CaS2IngestionSftp(TckTestCase):
     def test_03_fichier_json_invalide_part_en_dlq(self):
         fm = f"{self.marker}-sftpinv"
         name = f"tck-{fm}.json"
-        self._deposit_b64("sftp_invalid.json.b64", name, fm)
+        self._deposit_fixture("sftp_invalid.json", name, fm)
 
         self.wait_for(
             lambda: self.sql(
