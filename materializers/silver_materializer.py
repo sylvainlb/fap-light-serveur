@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Materializer silver du profil FAP-light (spec §C1.5, CA-S6).
+"""Silver materializer of the FAP-light profile (spec §C1.5, CA-S6).
 
-En production, le refresh est assuré par pg_cron dans Postgres (toutes les
+In production, the refresh is handled by pg_cron in Postgres (every
 10 min, job 'fap-light-silver-watermark' -> SELECT public.silver_tick()).
-Ce CLI sert :
-  - en CI / test : exécution manuelle (mode cli du TCK, silver.refresh.mode=cli) ;
-  - en exploitation : rattrapage manuel ou --full-refresh.
+This CLI is used:
+  - in CI / tests: manual execution (TCK cli mode, silver.refresh.mode=cli) ;
+  - in operations: manual catch-up or --full-refresh.
 
-Usage :
-  python3 silver_materializer.py                 # tick watermark (incrémental)
-  python3 silver_materializer.py --full-refresh  # rejoue tout le silver depuis
-                                                 # bronze (réapplique les vues
-                                                 # silver + watermark)
+Usage:
+  python3 silver_materializer.py                 # watermark tick (incremental)
+  python3 silver_materializer.py --full-refresh  # replays all silver from
+                                                 # bronze (reapplies the
+                                                 # silver views + watermark)
 
-Connexion via psql (variables PG* usuelles : PGHOST, PGPORT, PGUSER,
-PGPASSWORD, PGDATABASE) — aucune dépendance Python externe.
+Connection via psql (usual PG* variables: PGHOST, PGPORT, PGUSER,
+PGPASSWORD, PGDATABASE) — no external Python dependency.
 """
 
 from __future__ import annotations
@@ -43,28 +43,28 @@ def psql(sql: str | None = None, file: str | None = None) -> subprocess.Complete
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Materializer silver FAP-light")
+    ap = argparse.ArgumentParser(description="FAP-light silver materializer")
     ap.add_argument("--full-refresh", action="store_true",
-                    help="rejoue tout le silver depuis bronze (réapplique les vues + watermark)")
+                    help="replays all silver from bronze (reapplies the views + watermark)")
     ap.add_argument("--ddl", default=str(DEFAULT_DDL),
-                    help="fichier DDL des vues silver (utilisé avec --full-refresh)")
+                    help="DDL file of the silver views (used with --full-refresh)")
     args = ap.parse_args()
 
     if args.full_refresh:
         if not Path(args.ddl).exists():
-            print(f"ERREUR: DDL introuvable: {args.ddl}", file=sys.stderr)
+            print(f"ERROR: DDL not found: {args.ddl}", file=sys.stderr)
             return 2
         r = psql(file=args.ddl)
         if r.returncode != 0:
-            print(f"ERREUR full-refresh (DDL): {r.stderr[:500]}", file=sys.stderr)
+            print(f"ERROR full-refresh (DDL): {r.stderr[:500]}", file=sys.stderr)
             return 1
-        print("[full-refresh] vues silver réappliquées depuis bronze")
+        print("[full-refresh] silver views reapplied from bronze")
 
     r = psql(sql="SELECT public.silver_tick()")
     if r.returncode != 0:
-        print(f"ERREUR silver_tick: {r.stderr[:500]}", file=sys.stderr)
+        print(f"ERROR silver_tick: {r.stderr[:500]}", file=sys.stderr)
         return 1
-    print("[tick] watermark silver avancé (silver._watermarks)")
+    print("[tick] silver watermark advanced (silver._watermarks)")
     return 0
 
 

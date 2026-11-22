@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Backup FAP-light (obligatoire : SPOF assumé, spec §C1.1/§5) :
-#   - pg_dump complet (logique) horodaté dans backups/
-#   - l'archivage WAL continu est à activer côté PostgreSQL en production
-#     (wal_level=replica + archive_command), non configuré ici (docker local).
+# FAP-light backup (mandatory: SPOF assumed, spec §C1.1/§5):
+#   - full (logical) pg_dump, timestamped, into backups/
+#   - continuous WAL archiving must be enabled on the PostgreSQL side in
+#     production (wal_level=replica + archive_command), not configured here
+#     (local docker).
 # ============================================================================
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
@@ -14,6 +15,6 @@ OUT="backups/fap-light-${STAMP}.sql.gz"
 mkdir -p backups
 
 docker compose exec -T postgres pg_dump -U admin -d fap --no-owner | gzip > "$OUT"
-echo "[backup] dump écrit: $OUT ($(du -h "$OUT" | cut -f1))"
-echo "[backup] rétention : garder les 30 derniers dumps (exemple) :"
+echo "[backup] dump written: $OUT ($(du -h "$OUT" | cut -f1))"
+echo "[backup] retention: keep the last 30 dumps (example):"
 echo "           ls -1t backups/*.sql.gz | tail -n +31 | xargs -r rm"

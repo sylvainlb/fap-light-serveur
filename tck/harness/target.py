@@ -1,15 +1,15 @@
-"""Client d'accès à la cible FAP-light sous test.
+"""Access client to the FAP-light system under test.
 
-Charge la configuration depuis un fichier .properties (style Java) avec
-surcharge par variables d'environnement préfixées TCK_ :
+Loads the configuration from a .properties file (Java style) with
+override by TCK_-prefixed environment variables:
   tck.properties:  dsp.base.url=http://localhost:1880
   env:             TCK_DSP_BASE_URL=http://vm:1880
 
-Trois canaux d'accès :
-  - PostgreSQL via le binaire `psql` (ou un wrapper, ex. `docker compose ... exec -T postgres psql`)
-    configurable par `pg.cmd`, exécuté une fois par rôle (admin/gate/reader/app) ;
-  - HTTP (urllib, stdlib) vers ORCE : catalogue DSP, data plane DSP, endpoints d'ingestion ;
-  - SFTP (client OpenSSH `sftp` en subprocess, auth par clé) pour les dépôts de fichiers CA-S2.
+Three access channels:
+  - PostgreSQL via the `psql` binary (or a wrapper, e.g. `docker compose ... exec -T postgres psql`)
+    configurable via `pg.cmd`, run once per role (admin/gate/reader/app) ;
+  - HTTP (urllib, stdlib) to ORCE: DSP catalog, DSP data plane, ingestion endpoints ;
+  - SFTP (OpenSSH `sftp` client in a subprocess, key auth) for the CA-S2 file drops.
 """
 
 from __future__ import annotations
@@ -37,20 +37,20 @@ class ConfigError(RuntimeError):
 
 
 class PgError(RuntimeError):
-    """Échec d'une requête psql (ex. permission denied) — porte le stderr PG."""
+    """Failed psql query (e.g. permission denied) — carries the PG stderr."""
 
     def __init__(self, sql: str, returncode: int, stderr: str):
         self.sql = sql
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(f"psql a échoué (rc={returncode}): {stderr.strip()[:400]}")
+        super().__init__(f"psql failed (rc={returncode}): {stderr.strip()[:400]}")
 
 
 def load_properties(path: str | Path) -> dict[str, str]:
     props: dict[str, str] = {}
     p = Path(path)
     if not p.exists():
-        raise ConfigError(f"fichier de propriétés introuvable: {p}")
+        raise ConfigError(f"properties file not found: {p}")
     for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("!"):
@@ -62,7 +62,7 @@ def load_properties(path: str | Path) -> dict[str, str]:
         else:
             continue
         props[k.strip()] = v.strip()
-    # Surcharge par environnement : TCK_DSP_BASE_URL -> dsp.base.url
+    # Environment override: TCK_DSP_BASE_URL -> dsp.base.url
     for k in list(props):
         env = "TCK_" + k.upper().replace(".", "_").replace("-", "_")
         if env in os.environ:
@@ -75,7 +75,7 @@ def load_properties(path: str | Path) -> dict[str, str]:
 
 
 class Target:
-    """Accès configuré à la FAP-light sous test."""
+    """Configured access to the FAP-light under test."""
 
     def __init__(self, props: dict[str, str]):
         self.props = props
@@ -88,7 +88,7 @@ class Target:
             return self.props[key]
         if default is not None:
             return default
-        raise ConfigError(f"propriété requise manquante: {key}")
+        raise ConfigError(f"required property missing: {key}")
 
     def get_int(self, key: str, default: int) -> int:
         return int(self.get(key, str(default)))
@@ -100,7 +100,7 @@ class Target:
     def require(self, key: str) -> str:
         v = self.opt(key)
         if v is None:
-            raise ConfigError(f"propriété requise manquante ou non renseignée: {key}")
+            raise ConfigError(f"required property missing or not set: {key}")
         return v
 
     # ------------------------------------------------------------- postgres
@@ -116,7 +116,7 @@ class Target:
         ]
 
     def pg_sql(self, sql: str, role: str = "admin") -> list[list[str]]:
-        """Exécute du SQL via psql en tant que `role`, retourne les lignes (liste de champs)."""
+        """Runs SQL via psql as `role`, returns the rows (list of fields)."""
         password = self.require(f"pg.{role}.password")
         env = dict(os.environ, PGPASSWORD=password)
         proc = subprocess.run(
@@ -139,7 +139,7 @@ class Target:
         return rows[0][0]
 
     def pg_ok(self, sql: str, role: str) -> bool:
-        """True si la requête réussit, False si PG refuse (permission denied, etc.)."""
+        """True if the query succeeds, False if PG denies it (permission denied, etc.)."""
         try:
             self.pg_sql(sql, role)
             return True
@@ -179,8 +179,8 @@ class Target:
     # ------------------------------------------------------------- HMAC DSP
     def dsp_sign(self, asset_id: str, from_ts: str, to_ts: str, path: str | None = None,
                  method: str = "POST") -> dict[str, str]:
-        """Signature HMAC-SHA256 du data plane (forme canonique de référence du TCK) :
-        sha256=HMAC(secret, "METHOD\\nPATH\\nASSET\\nFROM\\nTO\\nTS") envoyée en headers."""
+        """HMAC-SHA256 signature of the data plane (TCK reference canonical form):
+        sha256=HMAC(secret, "METHOD\\nPATH\\nASSET\\nFROM\\nTO\\nTS") sent in headers."""
         secret = self.require("dsp.hmac.secret")
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         path = path or self.get("dsp.dataplane.path", "/dsp/data")
@@ -194,7 +194,7 @@ class Target:
 
     # ----------------------------------------------------------------- sftp
     def sftp_batch(self, commands: list[str]) -> subprocess.CompletedProcess:
-        """Exécute un batch sftp (auth par clé). commands: lignes 'put local remote', 'ls dir'…"""
+        """Runs an sftp batch (key auth). commands: 'put local remote', 'ls dir'… lines."""
         host = self.require("sftp.host")
         port = self.get("sftp.port", "22")
         user = self.require("sftp.user")
@@ -210,7 +210,7 @@ class Target:
     def sftp_put(self, local: str | Path, remote: str) -> None:
         proc = self.sftp_batch([f"put {local} {remote}"])
         if proc.returncode != 0:
-            raise RuntimeError(f"dépôt SFTP échoué: {proc.stderr.strip()[:400]}")
+            raise RuntimeError(f"SFTP drop failed: {proc.stderr.strip()[:400]}")
 
     def sftp_ls(self, remote_dir: str) -> str:
         proc = self.sftp_batch([f"ls -l {remote_dir}"])
@@ -218,7 +218,7 @@ class Target:
 
     # -------------------------------------------------------------- helpers
     def fixture(self, name: str, **repl) -> str:
-        """Charge un fixture et substitue les placeholders __CLÉ__."""
+        """Loads a fixture and substitutes the __KEY__ placeholders."""
         text = (FIXTURES_DIR / name).read_text(encoding="utf-8")
         for k, v in repl.items():
             text = text.replace(f"__{k.upper()}__", str(v))
@@ -229,7 +229,7 @@ class Target:
 
 
 def wait_until(fn, timeout_s: int, interval_s: float, desc: str):
-    """Polling : lève TimeoutError si `fn()` ne devient pas truthy dans le délai."""
+    """Polling: raises TimeoutError if `fn()` does not become truthy within the delay."""
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
@@ -237,4 +237,4 @@ def wait_until(fn, timeout_s: int, interval_s: float, desc: str):
         if last:
             return last
         time.sleep(interval_s)
-    raise TimeoutError(f"délai dépassé ({timeout_s}s) en attendant: {desc} (dernier état: {last!r})")
+    raise TimeoutError(f"timeout ({timeout_s}s) while waiting for: {desc} (last state: {last!r})")

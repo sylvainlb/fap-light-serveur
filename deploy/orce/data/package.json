@@ -2,7 +2,7 @@
   "name": "fap-light-orce",
   "version": "0.1.0",
   "private": true,
-  "description": "ORCE (Node-RED) du serveur FAP-light — modules runtime du profil light",
+  "description": "ORCE (Node-RED) of the FAP-light server — runtime modules of the light profile",
   "dependencies": {
     "pg": "^8.13.1",
     "ssh2-sftp-client": "^11.0.0",

@@ -1,12 +1,12 @@
 -- ============================================================================
--- FAP-light — 01_roles.sql : les 4 rôles PostgreSQL (spec §C1.4, CA-S7)
---   admin  : superuser (POSTGRES_USER du conteneur), propriétaire de tout
---   gate   : INSERT bronze only (+ EXECUTE sur les fonctions gate) — JAMAIS de lecture
---   reader : lecture gold uniquement (data plane + catalogue) — JAMAIS d'écriture
---   app    : lecture/écriture app.* uniquement (réservé étape 2)
--- Mots de passe passés en variables psql par init.sh (:'gate_pw' etc.).
--- Note : pas de bloc DO $$ ici — psql n'interpole pas :'var' dans les
--- dollar-quotes ; on passe par SELECT ... \gexec + ALTER ROLE (idempotent).
+-- FAP-light — 01_roles.sql : the 4 PostgreSQL roles (spec §C1.4, CA-S7)
+--   admin  : superuser (container POSTGRES_USER), owns everything
+--   gate   : INSERT bronze only (+ EXECUTE on the gate functions) — NEVER any read
+--   reader : gold read only (data plane + catalog) — NEVER any write
+--   app    : read/write on app.* only (reserved for step 2)
+-- Passwords passed as psql variables by init.sh (:'gate_pw' etc.).
+-- Note: no DO $$ block here — psql does not interpolate :'var' inside
+-- dollar-quotes ; we go through SELECT ... \gexec + ALTER ROLE (idempotent).
 -- ============================================================================
 
 SELECT format('CREATE ROLE gate LOGIN PASSWORD %L', :'gate_pw')
@@ -20,12 +20,12 @@ ALTER ROLE gate   LOGIN PASSWORD :'gate_pw';
 ALTER ROLE reader LOGIN PASSWORD :'reader_pw';
 ALTER ROLE app    LOGIN PASSWORD :'app_pw';
 
--- Le rôle gate ne doit lire AUCUNE table, y compris les vues système
--- (CA-S7 : SELECT 1 FROM pg_roles doit échouer pour gate). pg_roles est
--- lisible par PUBLIC par défaut : on révoque et on re-grante explicitement.
+-- The gate role must not read ANY table, including system views
+-- (CA-S7: SELECT 1 FROM pg_roles must fail for gate). pg_roles is
+-- readable by PUBLIC by default: revoke it and re-grant explicitly.
 REVOKE SELECT ON pg_catalog.pg_roles FROM PUBLIC;
 GRANT SELECT ON pg_catalog.pg_roles TO reader, app;
--- admin est superuser : contourne les vérifications de permission.
+-- admin is superuser: bypasses permission checks.
 
--- Droits du gate sur le schéma bronze (USAGE + INSERT tables + EXECUTE
--- fonctions gate) : faits dans 02_core.sql, une fois le schéma créé.
+-- Gate rights on the bronze schema (USAGE + INSERT tables + EXECUTE
+-- gate functions): done in 02_core.sql, once the schema exists.

@@ -1,6 +1,6 @@
-"""CA-S4 — Data plane DSP : réponse {assetId, schema, table, columns, rows, rowCount}
-dans la fenêtre from/to, LIMIT 5000 ; sans contrat valide -> 401/403 en JSON-LD dspace:Error.
-Spec §10 CA-S4, §C1.7 (mêmes contrat et format de réponse que la FAP-full, sur Postgres).
+"""CA-S4 — DSP data plane: response {assetId, schema, table, columns, rows, rowCount}
+within the from/to window, LIMIT 5000; without a valid contract -> 401/403 JSON-LD dspace:Error.
+Spec §10 CA-S4, §C1.7 (same contract and response format as the full FAP, on Postgres).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from suites.base import TckTestCase
 
 
 class CaS4DataPlane(TckTestCase):
-    """Contrat de réponse du data plane + fenêtre from/to + LIMIT 5000 + erreurs dspace:Error."""
+    """Data plane response contract + from/to window + LIMIT 5000 + dspace:Error errors."""
 
     @classmethod
     def setUpClass(cls):
@@ -41,40 +41,40 @@ class CaS4DataPlane(TckTestCase):
             headers.update(raw_headers)
         return self.t.http("POST", self.path, body=body, headers=headers), body
 
-    # ------------------------------------------------------- contrat de réponse
-    def test_01_forme_de_reponse_iso_facis(self):
+    # ------------------------------------------------------- response contract
+    def test_01_iso_facis_response_shape(self):
         resp, body = self._query()
-        self.assertEqual(resp.status, 200, f"statut attendu 200: {resp.status} {resp.text()[:300]}")
+        self.assertEqual(resp.status, 200, f"expected status 200: {resp.status} {resp.text()[:300]}")
         doc = resp.json()
         for key in ("assetId", "schema", "table", "columns", "rows", "rowCount"):
-            self.assertIn(key, doc, f"clé manquante dans la réponse data plane: {key}")
+            self.assertIn(key, doc, f"missing key in the data plane response: {key}")
         self.assertEqual(doc["assetId"], self.asset)
         self.assertEqual(doc["schema"], self.schema)
         self.assertEqual(doc["table"], self.table)
         self.assertIsInstance(doc["columns"], list)
         self.assertIsInstance(doc["rows"], list)
         self.assertEqual(doc["rowCount"], len(doc["rows"]),
-                         "rowCount doit égaler len(rows) (JSON plat, spec §C1.7)")
+                         "rowCount must equal len(rows) (flat JSON, spec §C1.7)")
         self.assertLessEqual(doc["rowCount"], self.limit)
-        # lignes = tableaux plats (pas d'objets imbriqués)
+        # rows = flat arrays (no nested objects)
         for row in doc["rows"][:5]:
-            self.assertIsInstance(row, list, f"les lignes doivent être des tableaux JSON plats: {row}")
+            self.assertIsInstance(row, list, f"rows must be flat JSON arrays: {row}")
 
-    def test_02_fenetre_from_to_respectee(self):
+    def test_02_from_to_window_respected(self):
         frm, to = self._window()
         resp, _ = self._query(frm=frm, to=to)
         self.assertEqual(resp.status, 200)
         doc = resp.json()
-        self.assertIn(self.time_column, doc["columns"], f"colonne temporelle {self.time_column} absente")
+        self.assertIn(self.time_column, doc["columns"], f"time column {self.time_column} missing")
         idx = doc["columns"].index(self.time_column)
         for row in doc["rows"]:
             ts = row[idx]
-            self.assertGreaterEqual(str(ts), frm, f"ligne hors fenêtre (avant from): {ts}")
+            self.assertGreaterEqual(str(ts), frm, f"row out of window (before from): {ts}")
             self.assertLessEqual(str(ts)[:19] + "Z" if "T" in str(ts) else str(ts), to,
-                                 f"ligne hors fenêtre (après to): {ts}")
+                                 f"row out of window (after to): {ts}")
 
-    def test_03_limite_5000_appliquee(self):
-        """rowCount ≤ 5000 ; si la fenêtre contient plus de 5000 lignes, rowCount == 5000."""
+    def test_03_limit_5000_applied(self):
+        """rowCount ≤ 5000 ; if the window holds more than 5000 rows, rowCount == 5000."""
         frm, to = self._window()
         resp, _ = self._query(frm=frm, to=to)
         doc = resp.json()
@@ -85,29 +85,29 @@ class CaS4DataPlane(TckTestCase):
         total = int(total or 0)
         if total > self.limit:
             self.assertEqual(doc["rowCount"], self.limit,
-                             f"LIMIT {self.limit} non appliqué: {total} lignes dans la fenêtre")
+                             f"LIMIT {self.limit} not applied: {total} rows in the window")
         else:
             self.assertEqual(doc["rowCount"], total,
-                             f"toutes les lignes de la fenêtre doivent être servies ({total})")
+                             f"all rows of the window must be served ({total})")
 
-    # ----------------------------------------------------------- erreurs contrat
-    def test_04_sans_contrat_401_ou_403_dspace_error(self):
+    # ----------------------------------------------------------- contract errors
+    def test_04_no_contract_401_or_403_dspace_error(self):
         resp, _ = self._query(sign=False)
-        self.assertIn(resp.status, (401, 403), f"sans contrat, attendu 401/403, reçu {resp.status}")
+        self.assertIn(resp.status, (401, 403), f"without contract, expected 401/403, got {resp.status}")
         self.assertIn("dspace:Error", resp.text(),
-                      f"l'erreur doit être un JSON-LD dspace:Error: {resp.text()[:300]}")
+                      f"the error must be a JSON-LD dspace:Error: {resp.text()[:300]}")
 
-    def test_05_signature_invalide_403_dspace_error(self):
+    def test_05_invalid_signature_403_dspace_error(self):
         resp, _ = self._query(raw_headers={"X-DSP-Signature": "sha256=0" * 32})
         self.assertIn(resp.status, (401, 403))
         self.assertIn("dspace:Error", resp.text())
 
-    def test_06_asset_inconnu_rejete(self):
+    def test_06_unknown_asset_rejected(self):
         resp, _ = self._query(asset="dataset:facis:inexistant")
-        self.assertIn(resp.status, (403, 404), f"asset non déclaré: attendu 403/404, reçu {resp.status}")
+        self.assertIn(resp.status, (403, 404), f"undeclared asset: expected 403/404, got {resp.status}")
         self.assertIn("dspace:Error", resp.text())
 
-    def test_07_fenetre_invalide_400_dspace_error(self):
+    def test_07_invalid_window_400_dspace_error(self):
         resp, _ = self._query(frm="pas-une-date", to="non-plus")
-        self.assertEqual(resp.status, 400, f"from/to invalide: attendu 400, reçu {resp.status}")
+        self.assertEqual(resp.status, 400, f"invalid from/to: expected 400, got {resp.status}")
         self.assertIn("dspace:Error", resp.text())

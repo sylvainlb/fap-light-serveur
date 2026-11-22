@@ -1,17 +1,17 @@
-# ORCE (Node-RED) du serveur FAP-light — image custom basée sur l'image ORCE
-# officielle, avec les modules runtime du profil light :
-#   pg                 : connexions PostgreSQL par rôle (gate/reader/admin)
-#   ssh2-sftp-client   : flow d'ingestion SFTP (cycle 60 s)
-#   csv-parse          : parser CSV du flow SFTP
-#   seedrandom         : simulation déterministe
-# /data est bakiné dans l'image (settings.js, flows.json, package.json,
-# node_modules, dsp-config) ; un volume nommé monté sur /data en préserve
-# le contenu entre les redémarrages.
+# ORCE (Node-RED) of the FAP-light server — custom image based on the official
+# ORCE image, with the runtime modules of the light profile:
+#   pg                 : PostgreSQL connections per role (gate/reader/admin)
+#   ssh2-sftp-client   : SFTP ingestion flow (60 s cycle)
+#   csv-parse          : CSV parser of the SFTP flow
+#   seedrandom         : deterministic simulation
+# /data is baked into the image (settings.js, flows.json, package.json,
+# node_modules, dsp-config); a named volume mounted on /data preserves
+# its content across restarts.
 FROM ecofacis/xfsc-orce:2.0.13
 
 USER root
 
-# outils de build natifs (ssh2) — l'image de base est Alpine
+# native build tools (ssh2) — the base image is Alpine
 RUN apk add --no-cache python3 make g++
 
 COPY data/package.json /data/package.json

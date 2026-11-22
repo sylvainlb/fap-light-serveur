@@ -1,4 +1,4 @@
-"""Base commune des suites TCK : chargement de la config et helpers d'assertion."""
+"""Common base of the TCK suites: config loading and assertion helpers."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from harness.target import Target, load_properties, wait_until, PgError
 
 
 class TckTestCase(unittest.TestCase):
-    """Accès à la cible via self.t ; marqueur unique par run pour l'idempotence."""
+    """Access to the target via self.t ; unique marker per run for idempotence."""
 
     t: Target
 
@@ -40,7 +40,7 @@ class TckTestCase(unittest.TestCase):
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset_s))
 
     def inject_sim(self, fixture: str = "sim_meter_payload.json", **extra) -> dict:
-        """Poste un payload de feed simulation sur l'endpoint d'ingestion ORCE."""
+        """Posts a simulation feed payload to the ORCE ingestion endpoint."""
         repl = {"MARKER": self.marker, "SITE": self.site, "TS": self.now_iso(), **extra}
         payload = json.loads(self.t.fixture(fixture, **repl))
         resp = self.t.http("POST", self.t.get("dsp.ingest.sim.path", "/ingest/sim"), body=payload)

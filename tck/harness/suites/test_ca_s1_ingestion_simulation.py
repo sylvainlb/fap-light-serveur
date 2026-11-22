@@ -1,5 +1,5 @@
-"""CA-S1 — Ingestion simulation (topic sim.*) : bronze -> silver (<= 10 min) -> gold,
-avec lineage complète. Spec §10 CA-S1, §C1.3 (flow simulation -> gate -> INSERT bronze).
+"""CA-S1 — Simulation ingestion (sim.* topic): bronze -> silver (<= 10 min) -> gold,
+with full lineage. Spec §10 CA-S1, §C1.3 (simulation flow -> gate -> INSERT bronze).
 """
 
 from __future__ import annotations
@@ -8,8 +8,8 @@ from suites.base import TckTestCase
 
 
 class CaS1IngestionSimulation(TckTestCase):
-    """Une donnée publiée par la simulation apparaît en bronze puis silver (≤ 10 min)
-    puis gold, avec lineage complète."""
+    """A record published by the simulation appears in bronze then silver (≤ 10 min)
+    then gold, with full lineage."""
 
     @classmethod
     def setUpClass(cls):
@@ -21,43 +21,43 @@ class CaS1IngestionSimulation(TckTestCase):
                                      "source_topic,ingest_timestamp,source_system").split(",")
         cls.silver_timeout = cls.t.get_int("silver.timeout.s", 600)
         cls.gold_timeout = cls.t.get_int("gold.timeout.s", 1200)
-        # Injection d'un payload de feed meter avec marqueur unique, une fois pour toute la suite.
+        # Injects a meter feed payload with a unique marker, once for the whole suite.
         cls.injected = None
 
     def setUp(self):
         if CaS1IngestionSimulation.injected is None:
             CaS1IngestionSimulation.injected = self.inject_sim()
         self.assertIn(CaS1IngestionSimulation.injected["status"], (200, 201, 202),
-                      f"l'endpoint d'ingestion simulation doit accepter le payload: "
+                      f"the simulation ingestion endpoint must accept the payload: "
                       f"{CaS1IngestionSimulation.injected}")
 
     # ------------------------------------------------------------- bronze
-    def test_01_bronze_contient_le_brut_avec_lineage(self):
-        """La ligne bronze contient le payload brut (fidélité) + les colonnes de lineage."""
+    def test_01_bronze_holds_raw_with_lineage(self):
+        """The bronze line holds the raw payload (fidelity) + the lineage columns."""
         rows = self.sql(
             f"SELECT raw_payload FROM {self.bronze} "
             f"WHERE raw_payload LIKE '%{self.marker}%' ORDER BY ingest_timestamp DESC LIMIT 1")
-        self.assertTrue(rows, f"aucune ligne bronze trouvée pour le marqueur {self.marker}")
+        self.assertTrue(rows, f"no bronze line found for marker {self.marker}")
         raw = rows[0][0]
         self.assertIn(self.marker, raw)
         self.assertIn("smart_energy.meter", raw)
-        # lineage complète : chaque colonne de lineage existe et est renseignée
+        # full lineage: each lineage column exists and is set
         cols = ", ".join(f"{c} IS NOT NULL AS {c}_ok" for c in self.lineage_cols)
         rows = self.sql(
             f"SELECT {cols} FROM {self.bronze} WHERE raw_payload LIKE '%{self.marker}%' LIMIT 1")
-        self.assertTrue(rows, "ligne bronze introuvable pour le contrôle de lineage")
+        self.assertTrue(rows, "bronze line not found for the lineage check")
         for i, c in enumerate(self.lineage_cols):
-            self.assertEqual(rows[0][i], "t", f"colonne de lineage non renseignée: {c}")
-        # la source déclarée est bien la famille de topics sim.*
+            self.assertEqual(rows[0][i], "t", f"lineage column not set: {c}")
+        # the declared source is indeed the sim.* topic family
         src = self.scalar(
             f"SELECT source_topic FROM {self.bronze} "
             f"WHERE raw_payload LIKE '%{self.marker}%' LIMIT 1")
         self.assertIsNotNone(src)
-        self.assertTrue(src.startswith("sim."), f"source_topic inattendu: {src} (attendu sim.*)")
+        self.assertTrue(src.startswith("sim."), f"unexpected source_topic: {src} (expected sim.*)")
 
     # ------------------------------------------------------------- silver
-    def test_02_silver_dans_la_fenetre_10_min(self):
-        """Le silver (typé, filtré) contient la ligne en ≤ silver.timeout.s (défaut 600 s)."""
+    def test_02_silver_within_10_min_window(self):
+        """The silver (typed, filtered) holds the line within ≤ silver.timeout.s (default 600 s)."""
         marker_col = self.t.get("silver.marker.column", "meter_id")
         found = self.wait_for(
             lambda: self.sql(
@@ -65,20 +65,20 @@ class CaS1IngestionSimulation(TckTestCase):
             timeout_s=self.silver_timeout, desc=f"silver.{marker_col}={self.marker}")
         self.assertTrue(found)
 
-    def test_03_silver_est_type_via_cast(self):
-        """Le silver est typé : le CAST (acte de typage, spec §C1.2) fonctionne sur les champs."""
+    def test_03_silver_is_typed_via_cast(self):
+        """The silver is typed: the CAST (typing act, spec §C1.2) works on the fields."""
         marker_col = self.t.get("silver.marker.column", "meter_id")
-        # Si la vue expose active_power_kw, le CAST en numérique doit réussir et valoir la valeur injectée.
+        # If the view exposes active_power_kw, the numeric CAST must succeed and equal the injected value.
         val = self.scalar(
             f"SELECT active_power_kw::float8 FROM {self.silver} "
             f"WHERE {marker_col} = {self.quote(self.marker)} LIMIT 1")
-        self.assertIsNotNone(val, "ligne silver absente pour le test de typage")
+        self.assertIsNotNone(val, "silver line missing for the typing test")
         self.assertAlmostEqual(float(val), 12.45, places=6,
-                               msg="le CAST silver doit restituer la valeur injectée (12.45)")
+                               msg="the silver CAST must return the injected value (12.45)")
 
     # --------------------------------------------------------------- gold
-    def test_04_gold_dans_la_fenetre_refresh(self):
-        """La donnée atteint le gold (matview) en ≤ gold.timeout.s (défaut 1200 s)."""
+    def test_04_gold_within_refresh_window(self):
+        """The record reaches gold (matview) within ≤ gold.timeout.s (default 1200 s)."""
         marker_col = self.t.get("gold.marker.column", "site_id")
         found = self.wait_for(
             lambda: self.sql(
@@ -86,8 +86,8 @@ class CaS1IngestionSimulation(TckTestCase):
             timeout_s=self.gold_timeout, desc=f"gold.{marker_col}={self.site}")
         self.assertTrue(found)
 
-    def test_05_chaine_complete_bronze_silver_gold(self):
-        """Lineage de bout en bout : bronze ET silver ET gold contiennent le marqueur."""
+    def test_05_full_chain_bronze_silver_gold(self):
+        """End-to-end lineage: bronze AND silver AND gold all contain the marker."""
         marker_col_s = self.t.get("silver.marker.column", "meter_id")
         marker_col_g = self.t.get("gold.marker.column", "site_id")
         b = self.scalar(f"SELECT count(*) FROM {self.bronze} "
@@ -96,6 +96,6 @@ class CaS1IngestionSimulation(TckTestCase):
                         f"WHERE {marker_col_s} = {self.quote(self.marker)}")
         g = self.scalar(f"SELECT count(*) FROM {self.gold} "
                         f"WHERE {marker_col_g} = {self.quote(self.site)}")
-        self.assertGreater(int(b or 0), 0, "bronze: marqueur absent")
-        self.assertGreater(int(s or 0), 0, "silver: marqueur absent")
-        self.assertGreater(int(g or 0), 0, "gold: marqueur absent")
+        self.assertGreater(int(b or 0), 0, "bronze: marker missing")
+        self.assertGreater(int(s or 0), 0, "silver: marker missing")
+        self.assertGreater(int(g or 0), 0, "gold: marker missing")

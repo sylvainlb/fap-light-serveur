@@ -1,1 +1,1 @@
-"""Harnais TCK du serveur FAP-light (kit de conformité, spec §10)."""
+"""TCK harness of the FAP-light server (conformance kit, spec §10)."""

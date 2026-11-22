@@ -1,8 +1,8 @@
-"""CA-S5 — Rate limit 10 req/min appliqué par offre ; accès audités (agreement_id).
-Spec §10 CA-S5, §7 (rate limit 10 req/min par offre, LIMIT 5000 lignes).
+"""CA-S5 — Rate limit 10 req/min applied per offer; accesses audited (agreement_id).
+Spec §10 CA-S5, §7 (rate limit 10 req/min per offer, LIMIT 5000 rows).
 
-La salve est envoyée sur un asset dédié (ca.s5.asset.id) pour ne pas consommer
-le bucket de l'asset utilisé par CA-S4.
+The burst is sent on a dedicated asset (ca.s5.asset.id) so as not to consume
+the bucket of the asset used by CA-S4.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from suites.base import TckTestCase
 
 
 class CaS5RateLimitAudit(TckTestCase):
-    """Rate limit par offre + audit des accès data space."""
+    """Rate limit per offer + data space access audit."""
 
     @classmethod
     def setUpClass(cls):
@@ -30,9 +30,9 @@ class CaS5RateLimitAudit(TckTestCase):
         frm = to - dt.timedelta(days=30)
         return frm.isoformat().replace("+00:00", "Z"), to.isoformat().replace("+00:00", "Z")
 
-    def test_01_rate_limit_par_offre(self):
-        """Sur un burst de limit+2 requêtes signées : ≤ limit acceptées (2xx),
-        ≥ 2 rejetées (429/403) avec dspace:Error."""
+    def test_01_rate_limit_per_offer(self):
+        """On a burst of limit+2 signed requests: ≤ limit accepted (2xx),
+        ≥ 2 rejected (429/403) with dspace:Error."""
         frm, to = self._window()
         accepted, rejected = 0, 0
         for i in range(self.burst):
@@ -44,26 +44,26 @@ class CaS5RateLimitAudit(TckTestCase):
                 accepted += 1
             elif resp.status in (429, 403):
                 rejected += 1
-                if i >= self.limit:  # seules les requêtes au-delà du quota doivent échouer
+                if i >= self.limit:  # only requests beyond the quota must fail
                     self.assertIn("dspace:Error", resp.text())
             else:
-                self.fail(f"statut inattendu {resp.status} à la requête {i}: {resp.text()[:200]}")
+                self.fail(f"unexpected status {resp.status} on request {i}: {resp.text()[:200]}")
         self.assertLessEqual(accepted, self.limit,
-                             f"rate limit non appliqué: {accepted} requêtes acceptées > {self.limit}")
+                             f"rate limit not applied: {accepted} requests accepted > {self.limit}")
         self.assertGreaterEqual(rejected, self.burst - self.limit,
-                                f"les requêtes au-delà de {self.limit}/min doivent être rejetées "
-                                f"(rejetées={rejected})")
+                                f"requests beyond {self.limit}/min must be rejected "
+                                f"(rejected={rejected})")
 
-    def test_02_acces_audites_avec_agreement_id(self):
-        """Chaque accès accepté doit laisser une trace d'audit (agreement_id + timestamp)."""
+    def test_02_accesses_audited_with_agreement_id(self):
+        """Each accepted access must leave an audit trace (agreement_id + timestamp)."""
         frm, to = self._window()
         headers = self.t.dsp_sign(self.asset, frm, to, path=self.path)
         resp = self.t.http("POST", self.path,
                            body={"assetId": self.asset, "from": frm, "to": to},
                            headers=headers)
         self.assertIn(resp.status, (200, 429, 403),
-                      f"statut inattendu pour la requête auditée: {resp.status}")
-        # l'audit peut être asynchrone : courte attente
+                      f"unexpected status for the audited request: {resp.status}")
+        # the audit may be asynchronous: short wait
         found = self.wait_for(
             lambda: self.sql(
                 f"SELECT 1 FROM {self.audit_table} WHERE agreement_id = {self.quote(self.agreement)}"),
@@ -72,4 +72,4 @@ class CaS5RateLimitAudit(TckTestCase):
         row = self.sql(
             f"SELECT agreement_id, ts FROM {self.audit_table} "
             f"WHERE agreement_id = {self.quote(self.agreement)} ORDER BY ts DESC LIMIT 1")[0]
-        self.assertTrue(row[0] and row[1], f"audit incomplet (agreement_id, ts requis): {row}")
+        self.assertTrue(row[0] and row[1], f"incomplete audit (agreement_id, ts required): {row}")

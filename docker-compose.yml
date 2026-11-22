@@ -1,7 +1,7 @@
 # ============================================================================
-# FAP-light — serveur sur 1 VM (spec §C1.1) : PostgreSQL + ORCE + caddy + IdP
-#   + mosquitto (broker MQTT local) + serveur SFTP de test.
-# Démarrage : cp .env.example .env (éditer) puis ./scripts/deploy.sh
+# FAP-light — server on 1 VM (spec §C1.1): PostgreSQL + ORCE + caddy + IdP
+#   + mosquitto (local MQTT broker) + test SFTP server.
+# Startup: cp .env.example .env (edit) then ./scripts/deploy.sh
 # ============================================================================
 name: fap-light
 
@@ -13,13 +13,13 @@ services:
     environment:
       TZ: UTC
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD requis dans .env}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD required in .env}
       POSTGRES_DB: fap
-      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
-      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
-      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?requis}
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?required}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?required}
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?required}
       DSP_AGREEMENT_ID: ${DSP_AGREEMENT_ID:-agreement:tck:ca-s4}
-    # pg_cron préchargé (materializers in-database, spec §C1.5)
+    # pg_cron preloaded (in-database materializers, spec §C1.5)
     command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=fap"]
     ports:
       - "${PG_PORT:-5432}:5432"
@@ -32,9 +32,9 @@ services:
       timeout: 3s
       retries: 30
 
-  # One-shot : applique 05_pg_cron.sql (extension + jobs) une fois le serveur
-  # démarré — pendant l'init, le serveur temporaire n'a pas cron.database_name.
-  # Idempotent, rejouable sans risque.
+  # One-shot: applies 05_pg_cron.sql (extension + jobs) once the server
+  # is up — during init, the temporary server has no cron.database_name.
+  # Idempotent, safe to re-run.
   init-pg-cron:
     build: ./deploy/postgres
     restart: "no"
@@ -44,7 +44,7 @@ services:
     environment:
       PGHOST: postgres
       PGUSER: admin
-      PGPASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD requis dans .env}
+      PGPASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD required in .env}
       PGDATABASE: fap
     volumes:
       - ./deploy/postgres/init:/init:ro
@@ -60,12 +60,12 @@ services:
       PG_PORT: "5432"
       PG_DB: fap
       PG_GATE_USER: gate
-      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?required}
       PG_READER_USER: reader
-      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?required}
       PG_ADMIN_USER: admin
-      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:?requis}
-      DSP_HMAC_SECRET: ${DSP_HMAC_SECRET:?requis}
+      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:?required}
+      DSP_HMAC_SECRET: ${DSP_HMAC_SECRET:?required}
       DSP_DATA_PATH: /dsp/data
       DSP_DATASETS_PATH: /data/dsp-config/datasets.json
       SIM_SITE_ID: ${SIM_SITE_ID:-site-berlin-001}
@@ -94,7 +94,7 @@ services:
     ports:
       - "${MQTT_PORT:-1883}:1883"
 
-  # ---------------------------------------------------------- serveur SFTP (source externe)
+  # ---------------------------------------------------------- SFTP server (external source)
   sftp:
     image: atmoz/sftp:latest
     restart: unless-stopped
@@ -105,7 +105,7 @@ services:
       - ./deploy/sftp/authorized_keys:/etc/ssh/authorized_keys:ro
       - sftp-data:/home/${SFTP_USER:-fap}
 
-  # ---------------------------------------------------------- caddy (TLS frontal)
+  # ---------------------------------------------------------- caddy (TLS front end)
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -121,7 +121,7 @@ services:
     depends_on:
       - orce
 
-  # ---------------------------------------------------------- IdP (Keycloak 26.x, décision D-4)
+  # ---------------------------------------------------------- IdP (Keycloak 26.x, decision D-4)
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
@@ -129,7 +129,7 @@ services:
     environment:
       TZ: UTC
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?requis}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?required}
     ports:
       - "${KEYCLOAK_PORT:-8080}:8080"
     volumes:

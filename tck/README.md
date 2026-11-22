@@ -1,63 +1,62 @@
-# TCK serveur FAP-light — mode d'emploi
+# FAP-light server TCK — user guide
 
-Kit de conformité (TCK) du serveur FAP-light, dérivé des **critères d'acceptation §10** de
-`../spec/fap-light-spec-serveur.md`. C'est le pendant, pour le profil light, du `tck/` du DSP
-Connector de la FAP-full (`/home/sylvain/facis/facis-fap-iot-ai/services/dsp-connector/tck`) :
-mêmes exigences de contrat (catalogue DSP, data plane `{assetId, schema, table, columns, rows,
-rowCount}`, HMAC, erreurs JSON-LD `dspace:Error`, DLQ, watermarks, rôles PG), exécutées contre
-la cible light (PostgreSQL + ORCE, 1 VM).
+Conformance kit (TCK) of the FAP-light server, derived from the **§10 acceptance criteria** of
+`../spec/fap-light-spec-serveur.md`. It is the counterpart, for the light profile, of the `tck/` of the DSP
+Connector of the full FAP (`/home/sylvain/facis/facis-fap-iot-ai/services/dsp-connector/tck`):
+same contract requirements (DSP catalog, data plane `{assetId, schema, table, columns, rows,
+rowCount}`, HMAC, JSON-LD `dspace:Error` errors, DLQ, watermarks, PG roles), executed against
+the light target (PostgreSQL + ORCE, 1 VM).
 
-Les tests sont **black-box** : ils ne supposent aucune implémentation interne, seulement les
-contrats de la spec et les noms déclarés dans `tck.properties`.
+The tests are **black-box**: they assume no internal implementation, only the contracts of the spec and the names declared in `tck.properties`.
 
-## Prérequis (poste lanceur)
+## Prerequisites (launcher host)
 
-| Outil | Pourquoi |
+| Tool | Why |
 |---|---|
-| `python3` (stdlib seul) | harness |
-| `psql` (postgresql-client) **ou** docker avec `pg.cmd` en wrapper `docker compose … exec -T postgres psql` | assertions SQL par rôle PG |
-| `sftp`/`ssh` (OpenSSH) + clé `sftp.key` | dépôts de fichiers CA-S2 |
-| connectivité réseau vers la VM cible (Postgres, ORCE:1880, SFTP:22) | — |
+| `python3` (stdlib only) | harness |
+| `psql` (postgresql-client) **or** docker with `pg.cmd` as a wrapper `docker compose … exec -T postgres psql` | SQL assertions per PG role |
+| `sftp`/`ssh` (OpenSSH) + key `sftp.key` | CA-S2 file drops |
+| network connectivity to the target VM (Postgres, ORCE:1880, SFTP:22) | — |
 
 ## Configuration
 
-Copier `tck.properties` en `tck.properties.local` et renseigner les `CHANGE_ME`
-(hôte, mots de passe des 4 rôles PG `admin`/`gate`/`reader`/`app`, secret HMAC du contrat
-de test, credentials SFTP). Toute clé peut être surchargée par env : `dsp.base.url` →
+Copy `tck.properties` to `tck.properties.local` and fill in the `CHANGE_ME`
+(host, passwords of the 4 PG roles `admin`/`gate`/`reader`/`app`, HMAC secret of the test
+contract, SFTP credentials). Any key can be overridden by env: `dsp.base.url` →
 `TCK_DSP_BASE_URL`.
 
-Noms de tables/vues attendus (modifiables) : `bronze.energy_meter`, `silver.energy_meter`,
+Expected table/view names (configurable): `bronze.energy_meter`, `silver.energy_meter`,
 `gold.net_grid_hourly`, tables `dlq`, `_cursors`, `silver._watermarks`, `dsp_access_audit`.
 
-## Exécution
+## Execution
 
 ```bash
 cd tck
-./run-tck.sh                                  # toutes les suites
-./run-tck.sh --suites CA-S4,CA-S5             # sous-ensemble
-./run-tck.sh --list                           # découverte sans exécution
+./run-tck.sh                                  # all suites
+./run-tck.sh --suites CA-S4,CA-S5             # subset
+./run-tck.sh --list                           # discovery without execution
 ./run-tck.sh --properties tck.properties.local
 ```
 
-Sortie : console + `evidence/tck-run-<stamp>.log` + `evidence/junit-<stamp>.xml`
-(code retour 0 = conforme, 1 = non conforme, 2 = erreur de configuration).
+Output: console + `evidence/tck-run-<stamp>.log` + `evidence/junit-<stamp>.xml`
+(exit code 0 = conformant, 1 = non-conformant, 2 = configuration error).
 
-## Portée des suites (mapping spec §10)
+## Suite scope (mapping spec §10)
 
-| Suite | CA | Ce qui est vérifié | Particularités |
+| Suite | AC | What is verified | Specifics |
 |---|---|---|---|
-| `test_ca_s1_ingestion_simulation.py` | CA-S1 | payload `sim.*` injecté → ligne bronze (brut + lineage) → silver ≤ `silver.timeout.s` (défaut 600 s) → gold ≤ `gold.timeout.s` | marqueur unique par run (`TCK_RUN_ID`) ; typage vérifié via CAST |
-| `test_ca_s2_ingestion_sftp.py` | CA-S2 | dépôt SFTP JSON/CSV valide → bronze + archivage `/archive` + curseur ; fichier invalide → DLQ avec `error_type`/`message`/`ts` + payload brut | attente bornée à `sftp.cycle.s` + marge |
-| `test_ca_s3_catalogue_dsp.py` | CA-S3 | catalogue = exactement les assets de `expected/datasets.json` (gold-only, `format: postgres`), chacun avec `policySummary` (rate_limit 10 req/min, ttl PT1H) ; un matview gold non déclarée créée à la volée n'apparaît pas | comparaison d'ensemble, pas de sous-ensemble |
-| `test_ca_s4_data_plane.py` | CA-S4 | réponse `{assetId, schema, table, columns, rows, rowCount}` ; fenêtre from/to ISO 8601 respectée ; `rowCount ≤ 5000` (= 5000 si la fenêtre contient plus de 5000 lignes) ; sans/with mauvais token HMAC → 401/403 en `dspace:Error` ; asset inconnu → 403/404 `dspace:Error` ; from/to invalide → 400 `dspace:Error` | forme canonique HMAC définie par le TCK (voir `target.py::dsp_sign`) |
-| `test_ca_s5_rate_limit_audit.py` | CA-S5 | salve de `rate.limit+2` requêtes signées sur un asset dédié : ≤ 10 acceptées (2xx), ≥ 2 rejetées (429/403 `dspace:Error`) ; chaque accès accepté est audité (`agreement_id`, timestamp) | asset dédié `ca.s5.asset.id` pour ne pas polluer le bucket de CA-S4 |
-| `test_ca_s6_watermarks_full_refresh.py` | CA-S6 | watermark silver avance après ingestion d'une nouvelle ligne bronze ; `--full-refresh` rejoue tout le silver depuis bronze (lignes rejouées présentes, watermark = max ts bronze) ; les filtres qualité silver s'appliquent (ligne bronze invalide sémantiquement absente du silver, présente en bronze) | `silver.refresh.mode=pg_cron` (poll) ou `cli` (exécution directe de `silver.materializer.cmd`) |
-| `test_ca_s7_roles_pg.py` | CA-S7 | rôle `gate` : SELECT bronze refusé, INSERT silver/gold refusé, INSERT bronze accepté ; rôle `reader` : SELECT gold accepté, toute écriture refusée ; rôle `app` : écriture `app.*` acceptée, écriture bronze refusée ; les 4 rôles existent | test par exécution psql par rôle, assertion sur `permission denied` |
-| `test_ca_s8_superset_gold.py` | CA-S8 | les requêtes exactes des dashboards (`expected/superset_queries.sql`) s'exécutent sans modification en rôle `reader` sur les matviews gold et retournent les colonnes attendues | si `superset.base.url` + `superset.api.token` + `superset.chart.ids` renseignés : contrôle live via l'API Superset (chart data), sinon SKIP documenté |
+| `test_ca_s1_ingestion_simulation.py` | CA-S1 | injected `sim.*` payload → bronze line (raw + lineage) → silver ≤ `silver.timeout.s` (default 600 s) → gold ≤ `gold.timeout.s` | unique marker per run (`TCK_RUN_ID`); typing verified via CAST |
+| `test_ca_s2_ingestion_sftp.py` | CA-S2 | valid JSON/CSV SFTP drop → bronze + `/archive` archiving + cursor ; invalid file → DLQ with `error_type`/`message`/`ts` + raw payload | bounded wait at `sftp.cycle.s` + margin |
+| `test_ca_s3_catalogue_dsp.py` | CA-S3 | catalog = exactly the assets of `expected/datasets.json` (gold-only, `format: postgres`), each with `policySummary` (rate_limit 10 req/min, ttl PT1H); an undeclared gold matview created on the fly does not appear | set comparison, not subset |
+| `test_ca_s4_data_plane.py` | CA-S4 | response `{assetId, schema, table, columns, rows, rowCount}` ; ISO 8601 from/to window respected ; `rowCount ≤ 5000` (= 5000 if the window holds more than 5000 rows) ; without/bad HMAC token → 401/403 in `dspace:Error` ; unknown asset → 403/404 `dspace:Error` ; invalid from/to → 400 `dspace:Error` | canonical HMAC form defined by the TCK (see `target.py::dsp_sign`) |
+| `test_ca_s5_rate_limit_audit.py` | CA-S5 | burst of `rate.limit+2` signed requests on a dedicated asset: ≤ 10 accepted (2xx), ≥ 2 rejected (429/403 `dspace:Error`) ; each accepted access is audited (`agreement_id`, timestamp) | dedicated asset `ca.s5.asset.id` so as not to pollute the CA-S4 bucket |
+| `test_ca_s6_watermarks_full_refresh.py` | CA-S6 | silver watermark advances after ingesting a new bronze line ; `--full-refresh` replays all silver from bronze (replayed lines present, watermark = max bronze ts) ; silver quality filters apply (semantically invalid bronze line absent from silver, present in bronze) | `silver.refresh.mode=pg_cron` (poll) or `cli` (direct execution of `silver.materializer.cmd`) |
+| `test_ca_s7_roles_pg.py` | CA-S7 | role `gate`: SELECT bronze denied, INSERT silver/gold denied, INSERT bronze accepted ; role `reader`: SELECT gold accepted, any write denied ; role `app`: write on `app.*` accepted, write on bronze denied ; the 4 roles exist | test by running psql per role, assertion on `permission denied` |
+| `test_ca_s8_superset_gold.py` | CA-S8 | the exact dashboard queries (`expected/superset_queries.sql`) run unmodified as role `reader` on the gold matviews and return the expected columns | if `superset.base.url` + `superset.api.token` + `superset.chart.ids` are set: live check via the Superset API (chart data), otherwise documented SKIP |
 
-## Forme canonique HMAC (contrat de test)
+## Canonical HMAC form (test contract)
 
-Le data plane DSP exige une signature par requête :
+The DSP data plane requires a per-request signature:
 
 ```
 canonical = "POST\n{dsp.dataplane.path}\n{assetId}\n{from}\n{to}\n{X-DSP-Timestamp}"
@@ -66,9 +65,9 @@ X-DSP-Agreement: {dsp.agreement.id}
 X-DSP-Timestamp: {ISO 8601 UTC}
 ```
 
-C'est la forme de référence implémentée par le TCK ; le serveur testé doit la vérifier.
+This is the reference form implemented by the TCK; the tested server must verify it.
 
-## Hors périmètre du TCK v1 (rappel spec §1.3 / §8)
+## Out of scope of TCK v1 (reminder spec §1.3 / §8)
 
-Pas de test sur : endpoint LDP/JSON-LD, domaine `app.*` peuplé, push SSE/WebSocket, ActivityPub,
-Type Index, SHACL, catalogue sur vues `app.*`. Ces sujets appartiennent à l'étape 2.
+No tests on: LDP/JSON-LD endpoint, populated `app.*` domain, SSE/WebSocket push, ActivityPub,
+Type Index, SHACL, catalog over `app.*` views. These topics belong to step 2.

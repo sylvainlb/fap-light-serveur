@@ -1,15 +1,15 @@
 -- ============================================================================
--- FAP-light — 04_gold_matviews.sql : matviews gold (vitrine, spec §C1.2),
--- rafraîchies par pg_cron via gold_refresh() (spec §C1.5, ordre GOLD_TABLE_ORDER).
+-- FAP-light — 04_gold_matviews.sql : gold matviews (showcase, spec §C1.2),
+-- refreshed by pg_cron via gold_refresh() (spec §C1.5, GOLD_TABLE_ORDER order).
 -- ----------------------------------------------------------------------------
--- Les 6 assets déclarés dans datasets.json (catalogue DSP, CA-S3) :
+-- The 6 assets declared in datasets.json (DSP catalog, CA-S3):
 --   net_grid_hourly, energy_balance_hourly, anomaly_candidates,
 --   event_impact_daily, weather_hourly, streetlight_zone_hourly
--- + 3 matviews consommées par les dashboards Superset (CA-S8) :
+-- + 3 matviews consumed by the Superset dashboards (CA-S8):
 --   city_dashboard_summary, energy_cost_daily, pv_performance_hourly
 -- ============================================================================
 
--- Phase 1 — agrégats de base -------------------------------------------------
+-- Phase 1 — base aggregates -------------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS gold.weather_hourly AS
 SELECT
   w.site_id,
@@ -49,7 +49,7 @@ SELECT
 FROM silver.city_event e
 GROUP BY e.zone_id, (e.event_timestamp::date);
 
--- Phase 2 — énergie horaire (dépend de silver.energy_meter + energy_price) ---
+-- Phase 2 — hourly energy (depends on silver.energy_meter + energy_price) ---
 CREATE MATERIALIZED VIEW IF NOT EXISTS gold.net_grid_hourly AS
 SELECT
   m.site_id,
@@ -81,7 +81,7 @@ LEFT JOIN (SELECT site_id, date_trunc('hour', event_timestamp) AS hour, sum(powe
   ON pv.site_id = m.site_id AND pv.hour = date_trunc('hour', m.event_timestamp)
 GROUP BY m.site_id, date_trunc('hour', m.event_timestamp), pv.pv_generation_kw;
 
--- Phase 3 — analytique -------------------------------------------------------
+-- Phase 3 — analytics ---------------------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS gold.anomaly_candidates AS
 WITH stats AS (
   SELECT site_id, avg(active_power_kw) AS avg_kw, stddev(active_power_kw) AS std_kw
@@ -99,7 +99,7 @@ SELECT
 FROM silver.energy_meter m
 JOIN stats s ON s.site_id = m.site_id
 WHERE s.std_kw IS NOT NULL AND s.std_kw > 0
-  AND abs((m.active_power_kw - s.avg_kw) / s.std_kw) > 2;   -- z-score > 2σ (comme la full)
+  AND abs((m.active_power_kw - s.avg_kw) / s.std_kw) > 2;   -- z-score > 2σ (as in the full)
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS gold.energy_cost_daily AS
 SELECT
@@ -112,7 +112,7 @@ LEFT JOIN silver.energy_price p
   ON p.site_id = m.site_id AND (p.event_timestamp::date) = (m.event_timestamp::date)
 GROUP BY m.site_id, (m.event_timestamp::date);
 
--- Phase 4 — synthèse dashboard (dépend des autres) ---------------------------
+-- Phase 4 — dashboard summary (depends on the others) -------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS gold.city_dashboard_summary AS
 SELECT
   m.site_id,
@@ -126,8 +126,8 @@ FROM silver.energy_meter m
 GROUP BY m.site_id;
 
 -- ---------------------------------------------------------------------------
--- gold_refresh() : full refresh des matviews, ordre des dépendances (4 phases,
--- comme GOLD_TABLE_ORDER de la full — spec §C1.5). Appelée par pg_cron.
+-- gold_refresh(): full refresh of the matviews, dependency order (4 phases,
+-- like GOLD_TABLE_ORDER in the full — spec §C1.5). Called by pg_cron.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.gold_refresh() RETURNS void
 LANGUAGE plpgsql
@@ -150,12 +150,12 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Droits reader : SELECT sur toutes les matviews gold (data plane + catalogue),
--- et sur les futures matviews du schéma gold. Aucune écriture (CA-S7).
+-- reader rights: SELECT on all gold matviews (data plane + catalog),
+-- and on future matviews of the gold schema. No write (CA-S7).
 -- ---------------------------------------------------------------------------
 GRANT SELECT ON ALL TABLES IN SCHEMA gold TO reader;
 ALTER DEFAULT PRIVILEGES IN SCHEMA gold GRANT SELECT ON TABLES TO reader;
--- matviews explicites (sécurité si ALL TABLES ne couvre pas relkind='m')
+-- explicit matviews (safety if ALL TABLES does not cover relkind='m')
 GRANT SELECT ON gold.weather_hourly, gold.pv_performance_hourly,
   gold.streetlight_zone_hourly, gold.event_impact_daily,
   gold.net_grid_hourly, gold.energy_balance_hourly,

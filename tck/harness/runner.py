@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Runner du TCK serveur FAP-light.
+"""Runner of the FAP-light server TCK.
 
-Découvre les suites `harness/suites/test_ca_s*.py`, les exécute (unittest) et produit :
-  - un log console complet + `evidence/tck-run-<stamp>.log` ;
-  - un rapport JUnit XML `evidence/junit-<stamp>.xml`.
+Discovers the suites `harness/suites/test_ca_s*.py`, runs them (unittest) and produces:
+  - a full console log + `evidence/tck-run-<stamp>.log` ;
+  - a JUnit XML report `evidence/junit-<stamp>.xml`.
 
-Usage :
+Usage:
   python3 runner.py [--properties tck.properties] [--suites CA-S1,CA-S4] [--list] [--evidence-dir DIR]
 
-Code de sortie : 0 si tous les tests passent (skips autorisés), 1 sinon, 2 si la config est invalide.
+Exit code: 0 if all tests pass (skips allowed), 1 otherwise, 2 if the config is invalid.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from harness.target import ConfigError, TCK_DIR, load_properties  # noqa: E402
 
 
 def normalize_ca(token: str) -> str:
-    """'CA-S1' / 'ca-s1' / 'S1' / 's1' -> 'CA-S1'."""
+    """'CA-S1' / 'ca-s1' / 'S1' / 's1' -> 'CA-S1' (normalized acceptance criterion id)."""
     t = token.strip().upper()
     if not t.startswith("CA-"):
         t = "CA-" + t
@@ -38,7 +38,7 @@ def normalize_ca(token: str) -> str:
 
 
 def discover_suite_modules(suite_filter: list[str] | None):
-    """Map CA-Sx -> module test_ca_sx_*.py ; retourne [(ca_id, module), ...]."""
+    """Map CA-Sx -> module test_ca_sx_*.py ; returns [(ca_id, module), ...]."""
     wanted = {normalize_ca(s) for s in suite_filter} if suite_filter else None
     modules = []
     for f in sorted(SUITES_DIR.glob("test_ca_s*.py")):
@@ -60,7 +60,7 @@ def load_tests(mod_names):
 
 
 class JUnitWriter:
-    """Écrit un XML JUnit minimal à partir d'un TimingResult (qui garde tous les cas exécutés)."""
+    """Writes a minimal JUnit XML from a TimingResult (which keeps every executed case)."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -114,11 +114,11 @@ class TimingResult(unittest.TextTestResult):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="TCK serveur FAP-light")
+    ap = argparse.ArgumentParser(description="FAP-light server TCK")
     ap.add_argument("--properties", default=str(TCK_DIR / "tck.properties"))
     ap.add_argument("--suites", default=None,
-                    help="filtre, ex. CA-S1,CA-S4 (ou S1,S4)")
-    ap.add_argument("--list", action="store_true", help="liste les tests découverts sans les exécuter")
+                    help="filter, e.g. CA-S1,CA-S4 (or S1,S4)")
+    ap.add_argument("--list", action="store_true", help="list discovered tests without running them")
     ap.add_argument("--evidence-dir", default=str(TCK_DIR / "evidence"))
     args = ap.parse_args()
 
@@ -137,7 +137,7 @@ def main() -> int:
     try:
         props = load_properties(args.properties)
     except ConfigError as e:
-        emit(f"ERREUR CONFIG: {e}")
+        emit(f"CONFIG ERROR: {e}")
         return 2
 
     os.environ["TCK_RUN_ID"] = stamp
@@ -147,11 +147,11 @@ def main() -> int:
     suite_filter = [s.strip() for s in args.suites.split(",")] if args.suites else None
     mods = discover_suite_modules(suite_filter)
     if not mods:
-        emit("Aucune suite ne correspond au filtre.")
+        emit("No suite matches the filter.")
         return 2
 
     emit(f"TCK FAP-light — run {stamp}")
-    emit(f"Propriétés : {args.properties}")
+    emit(f"Properties: {args.properties}")
     emit(f"Suites    : {', '.join(m for _, m in mods)}")
     emit(f"Evidence  : {log_path}")
     emit("")
@@ -166,7 +166,7 @@ def main() -> int:
                     emit(f"{ca_id}  {case.id()}")
                     count += 1
         emit("")
-        emit(f"Total: {count} test(s) découvert(s)")
+        emit(f"Total: {count} test(s) discovered")
         return 0
 
     suite = load_tests(mods)
@@ -181,15 +181,15 @@ def main() -> int:
     result = runner.run(suite)
 
     emit("")
-    emit(f"Tests exécutés : {result.testsRun} | OK : {result.testsRun - len(result.failures) - len(result.errors) - len(result.skipped)}"
-         f" | ÉCHECS : {len(result.failures)} | ERREURS : {len(result.errors)} | SKIPPED : {len(result.skipped)}")
+    emit(f"Tests run: {result.testsRun} | OK: {result.testsRun - len(result.failures) - len(result.errors) - len(result.skipped)}"
+         f" | FAILURES: {len(result.failures)} | ERRORS: {len(result.errors)} | SKIPPED: {len(result.skipped)}")
     for case, tb in result.failures + result.errors:
         emit(f"  [FAIL] {case.id()}: {tb.strip().splitlines()[-1][:200]}")
     for case, reason in result.skipped:
         emit(f"  [SKIP] {case.id()}: {reason}")
 
     JUnitWriter(junit_path).write(result, "fap-light-serveur-tck")
-    emit(f"Rapport JUnit : {junit_path}")
+    emit(f"JUnit report: {junit_path}")
     log_fh.close()
     return 0 if result.wasSuccessful() else 1
 

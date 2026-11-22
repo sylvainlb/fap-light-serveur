@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================================
-# TCK serveur FAP-light — point d'entrée (spec fap-light-spec-serveur.md §10)
+# FAP-light server TCK — entry point (spec fap-light-spec-serveur.md §10)
 #
-# Usage :
-#   ./run-tck.sh                          # toutes les suites, tck.properties
-#   ./run-tck.sh --suites CA-S1,CA-S4     # sous-ensemble
-#   ./run-tck.sh --list                   # liste les tests sans les exécuter
+# Usage:
+#   ./run-tck.sh                          # all suites, tck.properties
+#   ./run-tck.sh --suites CA-S1,CA-S4     # subset
+#   ./run-tck.sh --list                   # list tests without running them
 #   ./run-tck.sh --properties tck.properties.local
 #
-# Prérequis côté lanceur : python3, psql (ou docker si pg.cmd est un wrapper
-# docker compose), client sftp/ssh avec la clé TCK (sftp.key).
-# La cible (FAP-light déployée) est décrite par les propriétés / env TCK_*.
+# Launcher-side prerequisites: python3, psql (or docker if pg.cmd is a
+# docker compose wrapper), sftp/ssh client with the TCK key (sftp.key).
+# The target (deployed FAP-light) is described by the properties / TCK_* env.
 # ============================================================================
 set -Eeuo pipefail
 cd "$(dirname "$0")"
@@ -18,14 +18,14 @@ cd "$(dirname "$0")"
 CONFIG="${TCK_PROPERTIES:-tck.properties}"
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "ERREUR: python3 requis." >&2; exit 2
+  echo "ERROR: python3 required." >&2; exit 2
 fi
 if ! command -v psql >/dev/null 2>&1 && ! grep -qE '^pg\.cmd=.*docker' "$CONFIG"; then
-  echo "ATTENTION: psql introuvable et pg.cmd ne semble pas être un wrapper docker." >&2
-  echo "  Installer postgresql-client, ou passer pg.cmd par docker compose exec." >&2
+  echo "WARNING: psql not found and pg.cmd does not look like a docker wrapper." >&2
+  echo "  Install postgresql-client, or route pg.cmd through docker compose exec." >&2
 fi
 if ! command -v sftp >/dev/null 2>&1; then
-  echo "ATTENTION: client sftp introuvable — la suite CA-S2 sera en erreur." >&2
+  echo "WARNING: sftp client not found — the CA-S2 suite will error out." >&2
 fi
 
 echo "== TCK FAP-light — $(date -u +%Y-%m-%dT%H:%M:%SZ) =="

@@ -1,9 +1,9 @@
-"""CA-S2 — Ingestion SFTP : cycle 60 s, garde extension/taille, parsers JSON/CSV,
-archive /archive, curseur ; fichier invalide -> DLQ (error_type/message/ts + payload brut).
+"""CA-S2 — SFTP ingestion: 60 s cycle, extension/size guard, JSON/CSV parsers,
+archive /archive, cursor; invalid file -> DLQ (error_type/message/ts + raw payload).
 Spec §10 CA-S2, §C1.3.
 
-Chaque test utilise son propre marqueur de fichier (dérivé du run) pour ne pas
-se confondre avec l'injection simulation de CA-S1.
+Each test uses its own file marker (derived from the run) so as not to be
+confused with the CA-S1 simulation injection.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from suites.base import TckTestCase
 
 
 class CaS2IngestionSftp(TckTestCase):
-    """Dépôt SFTP ingéré, archivé, curseur enregistré ; fichier invalide en DLQ."""
+    """SFTP drop ingested, archived, cursor recorded; invalid file goes to the DLQ."""
 
     @classmethod
     def setUpClass(cls):
@@ -39,8 +39,8 @@ class CaS2IngestionSftp(TckTestCase):
         content = self.t.fixture(fixture, MARKER=file_marker, SITE=self.site, TS=self.now_iso())
         return self._deposit_text(content, remote_name)
 
-    # ------------------------------------------------------- fichier valide
-    def test_01_fichier_json_valide_ingere_archive_curseur(self):
+    # ------------------------------------------------------- valid file
+    def test_01_valid_json_file_ingested_archived_cursor(self):
         fm = f"{self.marker}-sftpjson"
         name = f"tck-{fm}.json"
         self._deposit_fixture("sftp_meter_valid.json", name, fm)
@@ -48,18 +48,18 @@ class CaS2IngestionSftp(TckTestCase):
         self.wait_for(
             lambda: self.sql(f"SELECT 1 FROM {self.bronze} "
                              f"WHERE raw_payload LIKE '%{fm}%'"),
-            timeout_s=self.wait_s, desc=f"ingestion bronze du fichier {name}")
+            timeout_s=self.wait_s, desc=f"bronze ingestion of file {name}")
 
-        # archivé dans /archive
+        # archived in /archive
         listing = self.t.sftp_ls(self.archive_dir)
-        self.assertIn(name, listing, f"fichier non archivé dans {self.archive_dir}: {listing}")
+        self.assertIn(name, listing, f"file not archived in {self.archive_dir}: {listing}")
 
-        # curseur enregistré (fichier traité)
+        # cursor recorded (file processed)
         cur = self.sql(f"SELECT count(*) FROM {self.cursors} "
                        f"WHERE file_name = {self.quote(name)}")
-        self.assertGreater(int(cur[0][0]), 0, f"curseur non enregistré pour {name}")
+        self.assertGreater(int(cur[0][0]), 0, f"cursor not recorded for {name}")
 
-    def test_02_fichier_csv_valide_parse(self):
+    def test_02_valid_csv_file_parsed(self):
         fm = f"{self.marker}-sftpcsv"
         name = f"tck-{fm}.csv"
         self._deposit_fixture("sftp_meter_valid.csv", name, fm)
@@ -67,10 +67,10 @@ class CaS2IngestionSftp(TckTestCase):
         self.wait_for(
             lambda: self.sql(f"SELECT 1 FROM {self.bronze} "
                              f"WHERE raw_payload LIKE '%{fm}%'"),
-            timeout_s=self.wait_s, desc=f"ingestion bronze du CSV {name}")
+            timeout_s=self.wait_s, desc=f"bronze ingestion of CSV {name}")
 
-    # ------------------------------------------------------ fichier invalide
-    def test_03_fichier_json_invalide_part_en_dlq(self):
+    # ------------------------------------------------------ invalid file
+    def test_03_invalid_json_file_goes_to_dlq(self):
         fm = f"{self.marker}-sftpinv"
         name = f"tck-{fm}.json"
         self._deposit_fixture("sftp_invalid.json", name, fm)
@@ -79,21 +79,21 @@ class CaS2IngestionSftp(TckTestCase):
             lambda: self.sql(
                 f"SELECT error_type, message, ts FROM {self.dlq} "
                 f"WHERE payload LIKE '%{fm}%' OR file_name = {self.quote(name)}"),
-            timeout_s=self.wait_s, desc=f"DLQ pour le fichier invalide {name}")
+            timeout_s=self.wait_s, desc=f"DLQ for invalid file {name}")
         rows = self.sql(
             f"SELECT error_type, message, ts, payload FROM {self.dlq} "
             f"WHERE payload LIKE '%{fm}%' OR file_name = {self.quote(name)} LIMIT 1")
-        self.assertTrue(rows, "ligne DLQ introuvable")
+        self.assertTrue(rows, "DLQ line not found")
         error_type, message, ts, payload = rows[0]
-        self.assertTrue(error_type, "DLQ: error_type requis et non vide")
-        self.assertTrue(message, "DLQ: message requis et non vide")
-        self.assertTrue(ts, "DLQ: ts requis et non vide")
-        self.assertTrue(payload and fm in payload, "DLQ: payload brut requis (fidélité)")
-        # aucune ligne bronze pour ce fichier
+        self.assertTrue(error_type, "DLQ: error_type required and non-empty")
+        self.assertTrue(message, "DLQ: message required and non-empty")
+        self.assertTrue(ts, "DLQ: ts required and non-empty")
+        self.assertTrue(payload and fm in payload, "DLQ: raw payload required (fidelity)")
+        # no bronze line for this file
         bronze = self.sql(f"SELECT count(*) FROM {self.bronze} WHERE raw_payload LIKE '%{fm}%'")
-        self.assertEqual(int(bronze[0][0]), 0, "un fichier invalide ne doit pas atterrir en bronze")
+        self.assertEqual(int(bronze[0][0]), 0, "an invalid file must not land in bronze")
 
-    def test_04_fichier_bad_extension_rejete(self):
+    def test_04_bad_extension_rejected(self):
         fm = f"{self.marker}-badext"
         name = f"tck-{fm}.txt"
         self._deposit_fixture("sftp_bad_extension.txt", name, fm)
@@ -102,7 +102,7 @@ class CaS2IngestionSftp(TckTestCase):
             lambda: self.sql(
                 f"SELECT 1 FROM {self.dlq} WHERE file_name = {self.quote(name)} "
                 f"UNION ALL SELECT 1 FROM {self.cursors} WHERE file_name = {self.quote(name)}"),
-            timeout_s=self.wait_s, desc=f"rejet structuré (DLQ ou curseur) pour {name}")
+            timeout_s=self.wait_s, desc=f"structured rejection (DLQ or cursor) for {name}")
         bronze = self.sql(f"SELECT count(*) FROM {self.bronze} "
                           f"WHERE raw_payload LIKE '%{fm}%' OR raw_payload LIKE '%{name}%'")
-        self.assertEqual(int(bronze[0][0]), 0, "un fichier .txt ne doit pas atterrir en bronze")
+        self.assertEqual(int(bronze[0][0]), 0, "a .txt file must not land in bronze")

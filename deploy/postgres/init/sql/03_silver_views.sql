@@ -1,8 +1,8 @@
 -- ============================================================================
--- FAP-light — 03_silver_views.sql : vues silver typées (->> + CAST), mêmes
--- filtres qualité que la FAP-full (spec §C1.2, synthèse §1). Silver = validité :
--- typé, filtré, rejouable (full-refresh = réapplication des vues, CA-S6).
--- Le CAST en silver est l'acte de typage.
+-- FAP-light — 03_silver_views.sql : typed silver views (->> + CAST), same
+-- quality filters as the full FAP (spec §C1.2, synthesis §1). Silver = validity:
+-- typed, filtered, replayable (full-refresh = reapplying the views, CA-S6).
+-- The CAST in silver is the typing act.
 -- ============================================================================
 
 CREATE OR REPLACE VIEW silver.energy_meter AS
@@ -28,7 +28,7 @@ SELECT
   (raw_payload->'readings'->>'power_factor')::float8      AS power_factor,
   (raw_payload->'readings'->>'frequency_hz')::float8      AS frequency_hz,
   (raw_payload->'readings'->>'total_energy_kwh')::float8  AS total_energy_kwh,
-  -- champ dérivé (même règle que la full) : total_active_power_w = L1+L2+L3
+  -- derived field (same rule as the full): total_active_power_w = L1+L2+L3
   (coalesce((raw_payload->'readings'->>'active_power_l1_w')::float8,0)
    + coalesce((raw_payload->'readings'->>'active_power_l2_w')::float8,0)
    + coalesce((raw_payload->'readings'->>'active_power_l3_w')::float8,0)) AS total_active_power_w,
@@ -36,8 +36,8 @@ SELECT
   source_system,
   source_seq
 FROM bronze.energy_meter
--- filtres qualité (identiques à la full : timestamp non nul, meter_id présent,
--- puissance >= 0)
+-- quality filters (identical to the full: non-null timestamp, meter_id present,
+-- power >= 0)
 WHERE raw_payload->>'timestamp' IS NOT NULL
   AND raw_payload->>'meter_id' IS NOT NULL
   AND raw_payload->>'active_power_kw' IS NOT NULL

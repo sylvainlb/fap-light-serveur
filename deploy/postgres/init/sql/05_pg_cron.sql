@@ -1,11 +1,11 @@
 -- ============================================================================
--- FAP-light — 05_pg_cron.sql : materializers in-database (spec §C1.5)
---   - silver watermark : toutes les 10 min (mêmes watermarks que la full)
---   - gold full refresh : toutes les 10 min (REFRESH MATERIALIZED VIEW)
--- Idempotent. Appliqué APRÈS le premier démarrage du serveur (le serveur
--- temporaire d'init n'a pas encore pg_cron.database_name=fap) : via le service
--- one-shot `init-pg-cron` (compose) ou `docker exec … psql -f 05_pg_cron.sql`.
--- Le serveur tourne avec shared_preload_libraries=pg_cron (commande compose).
+-- FAP-light — 05_pg_cron.sql : in-database materializers (spec §C1.5)
+--   - silver watermark: every 10 min (same watermarks as the full)
+--   - gold full refresh: every 10 min (REFRESH MATERIALIZED VIEW)
+-- Idempotent. Applied AFTER the first server startup (the temporary init
+-- server does not have pg_cron.database_name=fap yet): via the one-shot
+-- `init-pg-cron` service (compose) or `docker exec … psql -f 05_pg_cron.sql`.
+-- The server runs with shared_preload_libraries=pg_cron (compose command).
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;

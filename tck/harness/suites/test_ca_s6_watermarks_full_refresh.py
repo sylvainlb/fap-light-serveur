@@ -1,10 +1,10 @@
-"""CA-S6 — Watermark silver avance correctement ; --full-refresh rejoue tout le
-silver depuis bronze. Spec §10 CA-S6, §C1.5 (pg_cron, mêmes watermarks, mêmes 10 min).
+"""CA-S6 — Silver watermark advances correctly; --full-refresh replays all
+silver from bronze. Spec §10 CA-S6, §C1.5 (pg_cron, same watermarks, same 10 min).
 
-Deux modes (propriété silver.refresh.mode) :
-  - pg_cron : le refresh est assuré par pg_cron dans Postgres ; le TCK poll le watermark ;
-  - cli     : le TCK exécute `silver.materializer.cmd` (utile en CI pour ne pas
-              attendre 10 min).
+Two modes (property silver.refresh.mode):
+  - pg_cron : the refresh is handled by pg_cron in Postgres; the TCK polls the watermark ;
+  - cli     : the TCK runs `silver.materializer.cmd` (useful in CI to avoid
+              waiting 10 min).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from suites.base import TckTestCase
 
 
 class CaS6WatermarksFullRefresh(TckTestCase):
-    """Watermark silver + full-refresh rejouable depuis bronze."""
+    """Silver watermark + full-refresh replayable from bronze."""
 
     @classmethod
     def setUpClass(cls):
@@ -38,16 +38,16 @@ class CaS6WatermarksFullRefresh(TckTestCase):
 
     def _refresh(self, full: bool = False):
         if self.mode == "cli":
-            self.assertTrue(self.cmd, "silver.refresh.mode=cli exige silver.materializer.cmd")
+            self.assertTrue(self.cmd, "silver.refresh.mode=cli requires silver.materializer.cmd")
             args = self.cmd.split() + (["--full-refresh"] if full else [])
             proc = subprocess.run(args, capture_output=True, text=True, timeout=self.timeout + 120)
             self.assertEqual(proc.returncode, 0,
-                             f"materializer a échoué: {proc.stderr[:400]}")
-        # mode pg_cron : rien à déclencher, le cron tourne dans Postgres
+                             f"materializer failed: {proc.stderr[:400]}")
+        # mode pg_cron: nothing to trigger, the cron runs inside Postgres
 
     def _inject_bronze_direct(self, meter: str, power_kw: float) -> str:
-        """Insère directement en bronze (simule une ligne passée par la gate) avec un
-        payload JSON minimal ; retourne le timestamp utilisé."""
+        """Inserts directly into bronze (simulates a line that went through the gate) with a
+        minimal JSON payload; returns the timestamp used."""
         ts = self.now_iso()
         payload = json.dumps({
             "type": "smart_energy.meter", "schema_version": "1.0", "timestamp": ts,
@@ -60,45 +60,45 @@ class CaS6WatermarksFullRefresh(TckTestCase):
         return ts
 
     # --------------------------------------------------------------- tests
-    def test_01_watermark_avance_apres_nouvelle_ligne(self):
-        """Après ingestion d'une nouvelle ligne bronze + refresh, le watermark silver
-        avance (≥ timestamp de la ligne)."""
+    def test_01_watermark_advances_after_new_line(self):
+        """After ingesting a new bronze line + refresh, the silver watermark
+        advances (≥ timestamp of the line)."""
         before = self._watermark()
         marker = f"{self.marker}-wm"
         ts = self._inject_bronze_direct(marker, 5.0)
         self._refresh(full=False)
         self.wait_for(
             lambda: (self._watermark() or "") >= ts,
-            timeout_s=self.timeout, desc=f"watermark >= {ts} (avant: {before})")
+            timeout_s=self.timeout, desc=f"watermark >= {ts} (before: {before})")
         after = self._watermark()
-        self.assertGreaterEqual(after, ts, f"watermark non avancé: avant={before}, après={after}")
+        self.assertGreaterEqual(after, ts, f"watermark not advanced: before={before}, after={after}")
 
-    def test_02_full_refresh_rejoue_silver_depuis_bronze(self):
-        """--full-refresh : toutes les lignes bronze rejouées sont présentes en silver
-        (watermark = max ts bronze), et les filtres qualité s'appliquent."""
+    def test_02_full_refresh_replays_silver_from_bronze(self):
+        """--full-refresh: all replayed bronze lines are present in silver
+        (watermark = max bronze ts), and the quality filters apply."""
         ok_marker = f"{self.marker}-ok"
         bad_marker = f"{self.marker}-bad"
         ts_ok = self._inject_bronze_direct(ok_marker, 8.0)
-        # ligne sémantiquement invalide (puissance négative) : passe la gate (structure OK)
-        # mais doit être filtrée par la qualité silver (spec synthèse §1 : puissance >= 0)
+        # semantically invalid line (negative power): passes the gate (structure OK)
+        # but must be filtered by the silver quality layer (spec synthesis §1: power >= 0)
         self._inject_bronze_direct(bad_marker, -1.0)
 
         self._refresh(full=True)
         self.wait_for(
             lambda: self.sql(f"SELECT 1 FROM {self.silver} "
                              f"WHERE {self.marker_col} = {self.quote(ok_marker)}"),
-            timeout_s=self.timeout, desc=f"full-refresh: {ok_marker} présent en silver")
+            timeout_s=self.timeout, desc=f"full-refresh: {ok_marker} present in silver")
 
-        # la ligne invalide reste en bronze (fidélité) mais est absente du silver (validité)
+        # the invalid line stays in bronze (fidelity) but is absent from silver (validity)
         in_bronze = self.scalar(f"SELECT count(*) FROM {self.bronze} "
                                 f"WHERE raw_payload LIKE '%{bad_marker}%'")
         in_silver = self.scalar(f"SELECT count(*) FROM {self.silver} "
                                 f"WHERE {self.marker_col} = {self.quote(bad_marker)}")
-        self.assertEqual(int(in_bronze or 0), 1, "la ligne invalide doit rester en bronze")
+        self.assertEqual(int(in_bronze or 0), 1, "the invalid line must stay in bronze")
         self.assertEqual(int(in_silver or 0), 0,
-                         "le filtre qualité silver (puissance >= 0) doit exclure la ligne invalide")
+                         "the silver quality filter (power >= 0) must exclude the invalid line")
 
-        # watermark = max des ts bronze ingérés
+        # watermark = max of ingested bronze ts
         wm = self._watermark()
-        self.assertIsNotNone(wm, "watermark silver requis après full-refresh")
+        self.assertIsNotNone(wm, "silver watermark required after full-refresh")
         self.assertGreaterEqual(wm, ts_ok)

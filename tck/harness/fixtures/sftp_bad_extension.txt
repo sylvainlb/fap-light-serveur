@@ -1,2 +1,2 @@
-ce fichier n'est pas un .json ni un .csv : il doit être rejeté par la garde extension avant parsing
+this file is neither a .json nor a .csv: it must be rejected by the extension guard before parsing
 meter_id=__MARKER__

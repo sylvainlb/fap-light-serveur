@@ -1,6 +1,6 @@
-// Settings Node-RED du serveur FAP-light (ORCE, profil light).
-// functionExternalModules: true autorise require('pg'|'ssh2-sftp-client'|...)
-// depuis les function nodes (modules installés dans /data/node_modules).
+// Node-RED settings of the FAP-light server (ORCE, light profile).
+// functionExternalModules: true allows require('pg'|'ssh2-sftp-client'|...)
+// from function nodes (modules installed in /data/node_modules).
 module.exports = {
   flowFile: 'flows.json',
   userDir: '/data',

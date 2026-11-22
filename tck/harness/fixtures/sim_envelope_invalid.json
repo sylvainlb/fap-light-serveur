@@ -1,5 +1,5 @@
 {
   "type": "smart_energy.meter",
   "timestamp": "__TS__",
-  "active_power_kw": "douze"
+  "active_power_kw": "twelve"
 }

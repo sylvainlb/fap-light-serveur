@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Attend que les services du compose soient prêts (postgres healthy + ORCE up).
+# Waits until the compose services are ready (postgres healthy + ORCE up).
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,6 +12,6 @@ for i in $(seq 1 60); do
   fi
   sleep 5
 done
-echo "[wait] TIMEOUT — état des services :" >&2
+echo "[wait] TIMEOUT — service status:" >&2
 docker compose ps >&2 || true
 exit 1

@@ -37,24 +37,24 @@
   ],
   "users": [
     {
-      "username": "gestionnaire",
+      "username": "manager",
       "enabled": true,
-      "email": "gestionnaire@example.local",
-      "firstName": "Gestionnaire",
+      "email": "manager@example.local",
+      "firstName": "Manager",
       "lastName": "Parc",
       "attributes": {
-        "webid": ["https://id.example.local/gestionnaire#me"]
+        "webid": ["https://id.example.local/manager#me"]
       },
       "credentials": [
         { "type": "password", "value": "change-me", "temporary": true }
       ],
-      "realmRoles": ["gestionnaire"]
+      "realmRoles": ["manager"]
     }
   ],
   "roles": {
     "realm": [
-      { "name": "gestionnaire" },
-      { "name": "technicien" },
+      { "name": "manager" },
+      { "name": "technician" },
       { "name": "admin" }
     ]
   }

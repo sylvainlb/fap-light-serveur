@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Génère deploy/orce/data/flows.json — flows Node-RED (ORCE) du serveur FAP-light.
+"""Generates deploy/orce/data/flows.json — Node-RED (ORCE) flows of the FAP-light server.
 
-Tabs :
-  ingest-sim   : POST /ingest/sim -> gate -> INSERT bronze (rôle gate)
-                 + tick de simulation (toutes les 60 s, 9 feeds, seedrandom)
-  ingest-sftp  : cycle 60 s, garde extension/taille, parsers JSON/CSV,
-                 archive /archive, curseur, DLQ (spec §C1.3, CA-S2)
-  ingest-mqtt  : pont MQTT, QoS par route (meter/prices/pv=1, weather/city=0),
-                 source_topic = topic MQTT d'origine (décision D-1)
-  dsp          : POST /dsp/catalogue/request (auto-dérivation gold, CA-S3)
-               + POST /dsp/data (data plane : HMAC D-3, rate limit 10/min,
-                 audit, SELECT from/to LIMIT 5000, erreurs dspace:Error, CA-S4/S5)
+Tabs:
+  ingest-sim   : POST /ingest/sim -> gate -> INSERT bronze (gate role)
+                 + simulation tick (every 60 s, 9 feeds, seedrandom)
+  ingest-sftp  : 60 s cycle, extension/size guard, JSON/CSV parsers,
+                 archive /archive, cursor, DLQ (spec §C1.3, CA-S2)
+  ingest-mqtt  : MQTT bridge, QoS per route (meter/prices/pv=1, weather/city=0),
+                 source_topic = original MQTT topic (decision D-1)
+  dsp          : POST /dsp/catalogue/request (gold auto-derivation, CA-S3)
+               + POST /dsp/data (data plane: HMAC D-3, rate limit 10/min,
+                 audit, SELECT from/to LIMIT 5000, dspace:Error errors, CA-S4/S5)
   health       : GET /health
 
-La logique SQL passe par les fonctions gate dédiées (owner admin) appelées avec
-le rôle gate, et par des pools pg dédiés par rôle (gate/reader/admin).
+The SQL logic goes through the dedicated gate functions (owner admin) called with
+the gate role, and through dedicated pg pools per role (gate/reader/admin).
 """
 
 import json
@@ -165,12 +165,12 @@ function coerceCsvRow(r) {
       const remote = ingestDir + '/' + name;
       let buf = null;
       try {
-        buf = await sftp.get(remote);   // lu avant la garde : le DLQ garde le brut même en cas de rejet
+        buf = await sftp.get(remote);   // read before the guard: the DLQ keeps the raw content even on rejection
         if (!/\\.(json|csv)$/i.test(name)) {
-          const e = new Error('extension non autorisée (attendu .json/.csv)'); e.code = 'bad_extension'; throw e;
+          const e = new Error('extension not allowed (expected .json/.csv)'); e.code = 'bad_extension'; throw e;
         }
         if (buf.length > maxBytes) {
-          const e = new Error('taille > ' + maxBytes + ' octets'); e.code = 'file_too_large'; throw e;
+          const e = new Error('size > ' + maxBytes + ' bytes'); e.code = 'file_too_large'; throw e;
         }
         let payloads;
         if (/\\.csv$/i.test(name)) {
@@ -227,9 +227,9 @@ FN_CATALOGUE = JS_POOL + JS_DSP_ERROR + """
 (async () => {
   try {
     const datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));
-    // auto-dérivation depuis le catalogue PG (gold uniquement à l'ISO, spec §C1.6) :
-    // on ne publie que les tables gold EXISTANTES (visibles par le rôle reader)
-    // ET déclarées dans datasets.json.
+    // auto-derivation from the PG catalog (gold only per ISO, spec §C1.6):
+    // we only publish EXISTING gold tables (visible to the reader role)
+    // AND declared in datasets.json.
     const res = await pool('reader').query(
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
       "WHERE n.nspname = 'gold' AND c.relkind IN ('m','r','v')");
@@ -267,42 +267,42 @@ FN_DATAPLANE = JS_POOL + JS_DSP_ERROR + """
     const assetId = body.assetId, from = body.from, to = body.to;
     const path = env.get('DSP_DATA_PATH') || '/dsp/data';
 
-    // 1. contrat présent (headers HMAC + body) — sinon 401
+    // 1. contract present (HMAC headers + body) — otherwise 401
     if (!sig || !agreement || !ts || !assetId || !from || !to) {
       return fail(dspError(401, 'missing_credentials',
-        ['X-DSP-Signature, X-DSP-Agreement, X-DSP-Timestamp et body {assetId, from, to} requis']));
+        ['X-DSP-Signature, X-DSP-Agreement, X-DSP-Timestamp and body {assetId, from, to} required']));
     }
-    // 2. vérification HMAC — forme canonique D-3 (spec §9) :
+    // 2. HMAC verification — canonical form D-3 (spec §9):
     //    sha256=HMAC_SHA256(secret, "POST\\n{path}\\n{assetId}\\n{from}\\n{to}\\n{ts}")
     const secret = env.get('DSP_HMAC_SECRET') || '';
     const canonical = ['POST', path, assetId, from, to, ts].join('\\n');
     const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');
     const a = Buffer.from(String(sig)), b = Buffer.from(expected);
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return fail(dspError(403, 'invalid_signature', ['HMAC invalide']));
+      return fail(dspError(403, 'invalid_signature', ['invalid HMAC']));
     }
-    // 3. fenêtre from/to ISO 8601 — sinon 400
+    // 3. from/to ISO 8601 window — otherwise 400
     const ISO_RE = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$/;
     if (!ISO_RE.test(from) || !ISO_RE.test(to)) {
-      return fail(dspError(400, 'invalid_window', ['from/to doivent être des timestamps ISO 8601']));
+      return fail(dspError(400, 'invalid_window', ['from/to must be ISO 8601 timestamps']));
     }
-    // 4. plan de contrôle : agreement connu et actif
+    // 4. control plane: agreement known and active
     const ag = await pool('admin').query(
       'SELECT agreement_id, asset_id, rate_limit_per_min FROM public.dsp_agreements WHERE agreement_id = $1 AND active = true',
       [agreement]);
-    if (ag.rowCount === 0) return fail(dspError(403, 'unknown_agreement', ['agreement_id inconnu ou inactif']));
+    if (ag.rowCount === 0) return fail(dspError(403, 'unknown_agreement', ['agreement_id unknown or inactive']));
     const rateLimit = ag.rows[0].rate_limit_per_min || 10;
-    // 5. asset déclaré dans le catalogue (gold-only à l'ISO) — sinon 404
+    // 5. asset declared in the catalog (gold-only per ISO) — otherwise 404
     const datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));
     const ds = (Array.isArray(datasets) ? datasets : []).find(d => d && d.id === assetId);
     if (!ds || !ds.metadata || !ds.metadata.schema || !ds.metadata.table) {
-      return fail(dspError(404, 'asset_not_found', ['asset non déclaré dans le catalogue: ' + assetId]));
+      return fail(dspError(404, 'asset_not_found', ['asset not declared in the catalog: ' + assetId]));
     }
     if (ag.rows[0].asset_id && ag.rows[0].asset_id !== assetId) {
-      return fail(dspError(403, 'agreement_not_covering_asset', ["l'agreement ne couvre pas cet asset"]));
+      return fail(dspError(403, 'agreement_not_covering_asset', ["the agreement does not cover this asset"]));
     }
     const schema = ds.metadata.schema, table = ds.metadata.table, timeColumn = ds.metadata.timeColumn;
-    // 6. rate limit par offre (asset), fenêtre glissante 60 s — sinon 429 audité
+    // 6. rate limit per offer (asset), sliding 60 s window — otherwise 429 audited
     const rl = await pool('admin').query(
       "SELECT count(*)::int AS n FROM public.dsp_access_audit WHERE asset_id = $1 AND status = 200 AND ts > now() - interval '60 seconds'",
       [assetId]);
@@ -310,16 +310,16 @@ FN_DATAPLANE = JS_POOL + JS_DSP_ERROR + """
       await pool('admin').query(
         'INSERT INTO public.dsp_access_audit (agreement_id, asset_id, ts, status, path) VALUES ($1, $2, now(), 429, $3)',
         [agreement, assetId, path]);
-      return fail(dspError(429, 'rate_limit_exceeded', ['rate limit ' + rateLimit + ' req/min par offre dépassé']));
+      return fail(dspError(429, 'rate_limit_exceeded', ['rate limit ' + rateLimit + ' req/min per offer exceeded']));
     }
-    // 7. data plane (rôle reader) : SELECT + fenêtre from/to + LIMIT 5000 (spec §C1.7)
+    // 7. data plane (reader role): SELECT + from/to window + LIMIT 5000 (spec §C1.7)
     const sql = 'SELECT * FROM ' + schema + '.' + table +
       ' WHERE ' + timeColumn + ' >= $1::timestamptz AND ' + timeColumn + ' <= $2::timestamptz' +
       ' ORDER BY ' + timeColumn + ' LIMIT 5000';
     const q = await pool('reader').query(sql, [from, to]);
     const columns = q.fields.map(f => f.name);
     const rows = q.rows.map(r => columns.map(c => r[c]));
-    // 8. audit de l'accès (agreement_id, ts)
+    // 8. access audit (agreement_id, ts)
     await pool('admin').query(
       'INSERT INTO public.dsp_access_audit (agreement_id, asset_id, ts, status, path) VALUES ($1, $2, now(), 200, $3)',
       [agreement, assetId, path]);
@@ -351,13 +351,13 @@ def node(id, type, name, z, x=100, y=100, **props):
 flows = []
 
 flows.append({"id": "tab-ingest-sim", "type": "tab", "label": "ingest-sim", "disabled": False,
-              "info": "POST /ingest/sim + tick simulation -> gate -> bronze"})
+              "info": "POST /ingest/sim + simulation tick -> gate -> bronze"})
 flows.append({"id": "tab-ingest-sftp", "type": "tab", "label": "ingest-sftp", "disabled": False,
-              "info": "cycle SFTP 60 s -> gate -> bronze, archive, curseur, DLQ"})
+              "info": "SFTP cycle 60 s -> gate -> bronze, archive, cursor, DLQ"})
 flows.append({"id": "tab-ingest-mqtt", "type": "tab", "label": "ingest-mqtt", "disabled": False,
-              "info": "pont MQTT -> gate -> bronze (QoS par route)"})
+              "info": "MQTT bridge -> gate -> bronze (QoS per route)"})
 flows.append({"id": "tab-dsp", "type": "tab", "label": "dsp", "disabled": False,
-              "info": "catalogue DSP + data plane DSP (HMAC, rate limit, audit)"})
+              "info": "DSP catalog + DSP data plane (HMAC, rate limit, audit)"})
 flows.append({"id": "tab-health", "type": "tab", "label": "health", "disabled": False, "info": ""})
 
 by_id = {}
@@ -372,21 +372,21 @@ def wire(src, dst):
 
 # --- ingest-sim
 add(node("n-in-sim", "http in", "POST /ingest/sim", "tab-ingest-sim", 100, 100, url="/ingest/sim", method="post"))
-add(node("n-fn-gate-sim", "function", "gate -> bronze (role gate)", "tab-ingest-sim", 320, 100, func=FN_GATE_SIM, outputs=1, libs=[{"module":"pg","var":"pgLib"}]))
+add(node("n-fn-gate-sim", "function", "gate -> bronze (gate role)", "tab-ingest-sim", 320, 100, func=FN_GATE_SIM, outputs=1, libs=[{"module":"pg","var":"pgLib"}]))
 add(node("n-res-sim", "http response", "", "tab-ingest-sim", 560, 100))
-add(node("n-sim-tick", "inject", "tick simulation 60s", "tab-ingest-sim", 100, 180, repeat="60", once=True, onceDelay=5))
-add(node("n-fn-sim", "function", "génère 9 feeds (seedrandom) -> gate", "tab-ingest-sim", 340, 180, func=FN_SIM_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"seedrandom","var":"seedrandom"}]))
+add(node("n-sim-tick", "inject", "simulation tick 60s", "tab-ingest-sim", 100, 180, repeat="60", once=True, onceDelay=5))
+add(node("n-fn-sim", "function", "generates 9 feeds (seedrandom) -> gate", "tab-ingest-sim", 340, 180, func=FN_SIM_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"seedrandom","var":"seedrandom"}]))
 wire("n-in-sim", "n-fn-gate-sim"); wire("n-fn-gate-sim", "n-res-sim"); wire("n-sim-tick", "n-fn-sim")
 
 # --- ingest-sftp
-add(node("n-sftp-tick", "inject", "cycle SFTP 60s", "tab-ingest-sftp", 100, 100, repeat="60", once=True, onceDelay=10))
-add(node("n-fn-sftp", "function", "poll /ingest -> garde -> parse -> gate -> archive + curseur", "tab-ingest-sftp", 380, 100, func=FN_SFTP_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"ssh2-sftp-client","var":"Sftp"},{"module":"csv-parse/sync","var":"csvSync"}]))
+add(node("n-sftp-tick", "inject", "SFTP cycle 60s", "tab-ingest-sftp", 100, 100, repeat="60", once=True, onceDelay=10))
+add(node("n-fn-sftp", "function", "poll /ingest -> guard -> parse -> gate -> archive + cursor", "tab-ingest-sftp", 380, 100, func=FN_SFTP_CYCLE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"ssh2-sftp-client","var":"Sftp"},{"module":"csv-parse/sync","var":"csvSync"}]))
 wire("n-sftp-tick", "n-fn-sftp")
 
 # --- ingest-mqtt
 add(node("n-mqtt-broker", "mqtt-broker", "mosquitto", "tab-ingest-mqtt", 0, 0,
          broker="mosquitto", port="1883", clientid="fap-light-orce"))
-MQTT_ROUTES = [  # (topic, qos) — QoS par route : meter/prices/pv = 1, weather/city = 0 (spec §C1.3)
+MQTT_ROUTES = [  # (topic, qos) — QoS per route: meter/prices/pv = 1, weather/city = 0 (spec §C1.3)
     ("facis/energy/meter/+", "1"),
     ("facis/prices/spot", "1"),
     ("facis/energy/pv/+", "1"),
@@ -397,7 +397,7 @@ MQTT_ROUTES = [  # (topic, qos) — QoS par route : meter/prices/pv = 1, weather
     ("facis/city/events/+", "0"),
     ("facis/city/weather/+", "0"),
 ]
-add(node("n-fn-mqtt", "function", "MQTT -> enveloppe -> gate (source_topic = topic d'origine, D-1)",
+add(node("n-fn-mqtt", "function", "MQTT -> envelope -> gate (source_topic = original topic, D-1)",
          "tab-ingest-mqtt", 380, 300, func=FN_MQTT_GATE, outputs=1, libs=[{"module":"pg","var":"pgLib"}]))
 for i, (topic, qos) in enumerate(MQTT_ROUTES):
     add(node(f"n-mqtt-{i}", "mqtt in", topic, "tab-ingest-mqtt", 120, 100 + i * 60,
@@ -406,10 +406,10 @@ for i, (topic, qos) in enumerate(MQTT_ROUTES):
 
 # --- dsp
 add(node("n-in-cat", "http in", "POST /dsp/catalogue/request", "tab-dsp", 100, 100, url="/dsp/catalogue/request", method="post"))
-add(node("n-fn-cat", "function", "catalogue DSP (auto-dérivé gold ∩ datasets.json)", "tab-dsp", 340, 100, func=FN_CATALOGUE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"fs","var":"fs"}]))
+add(node("n-fn-cat", "function", "DSP catalog (auto-derived gold ∩ datasets.json)", "tab-dsp", 340, 100, func=FN_CATALOGUE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"fs","var":"fs"}]))
 add(node("n-res-cat", "http response", "", "tab-dsp", 580, 100))
 add(node("n-in-data", "http in", "POST /dsp/data", "tab-dsp", 100, 200, url="/dsp/data", method="post"))
-add(node("n-fn-data", "function", "data plane DSP (HMAC D-3, rate limit, audit, LIMIT 5000)", "tab-dsp", 340, 200, func=FN_DATAPLANE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"crypto","var":"crypto"},{"module":"fs","var":"fs"}]))
+add(node("n-fn-data", "function", "DSP data plane (HMAC D-3, rate limit, audit, LIMIT 5000)", "tab-dsp", 340, 200, func=FN_DATAPLANE, outputs=1, libs=[{"module":"pg","var":"pgLib"},{"module":"crypto","var":"crypto"},{"module":"fs","var":"fs"}]))
 add(node("n-res-data", "http response", "", "tab-dsp", 580, 200))
 wire("n-in-cat", "n-fn-cat"); wire("n-fn-cat", "n-res-cat")
 wire("n-in-data", "n-fn-data"); wire("n-fn-data", "n-res-data")
@@ -423,4 +423,4 @@ wire("n-in-health", "n-fn-health"); wire("n-fn-health", "n-res-health")
 out = Path(__file__).resolve().parent / "data" / "flows.json"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(flows, indent=1, ensure_ascii=False), encoding="utf-8")
-print(f"flows.json généré: {out} ({len(flows)} nœuds)")
+print(f"flows.json generated: {out} ({len(flows)} nodes)")
