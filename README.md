@@ -24,6 +24,10 @@ fap-light-serveur/
 │   ├── orce/                  ← ORCE image (Node-RED) + flows (flows_gen.py -> data/flows.json)
 │   │   └── data/              ← settings.js, flows.json, package.json, dsp-config/datasets.json
 │   ├── caddy/  mosquitto/  keycloak/  sftp/
+├── deploy/ai/                 ← pile IA (chantier 5, spec ../spec/app-ai-component-editor.md rev 5) :
+│   │                             service dédié, activé par COMPOSE_PROFILES=ai, routé par caddy sur /ai/*
+│   │                             J15 livré : POST /ai/run, sorties texte, registre /ai_models/, jobs, compteurs
+│   │                             tests : cd deploy/ai && python3 -m unittest discover -s tests
 ├── materializers/
 │   └── silver_materializer.py ← watermark CLI / --full-refresh (CI ; in prod pg_cron runs every */10 min)
 ├── scripts/                   ← deploy.sh, wait-healthy.sh, backup.sh (pg_dump + WAL, SPOF assumed)

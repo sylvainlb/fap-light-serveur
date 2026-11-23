@@ -7,6 +7,10 @@
 
 {$FAP_DOMAIN:localhost} {
 	tls internal
+	# Pile IA (chantier 5) : route /ai/* vers le service dédié (spec §3.0 rev 3+)
+	route /ai/* {
+		reverse_proxy ai:8080
+	}
 	reverse_proxy orce:1880
 }
 

@@ -105,6 +105,32 @@ services:
       - ./deploy/sftp/authorized_keys:/etc/ssh/authorized_keys:ro
       - sftp-data:/home/${SFTP_USER:-fap}
 
+  # ---------------------------------------------------------- Pile IA (chantier 5)
+  # Service dédié du dépôt (spec app-ai-component-editor.md rev 5, §3.0), activé
+  # par configuration : ajouter "ai" à COMPOSE_PROFILES dans .env.
+  # Routé par caddy sur /ai/* (voir deploy/caddy/Caddyfile).
+  ai:
+    profiles: ["ai"]
+    build: ./deploy/ai
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      AI_PORT: "8080"
+      LDP_BASE_URL: ${LDP_BASE_URL:-http://caddy}
+      AI_MODELS_CONTAINER: ${AI_MODELS_CONTAINER:-/ai_models/}
+      AI_STATE_DIR: /data
+      AI_JWT_VERIFY: ${AI_JWT_VERIFY:-0}
+      AI_DEV_INSECURE: ${AI_DEV_INSECURE:-0}
+      AI_BUDGET_MAX_RUNS: ${AI_BUDGET_MAX_RUNS:-0}
+      AI_BUDGET_WINDOW_DAYS: ${AI_BUDGET_WINDOW_DAYS:-30}
+      AI_JOB_RETENTION_DAYS: ${AI_JOB_RETENTION_DAYS:-7}
+      # Credentials des modèles distants (F1.4) : jamais dans le registre LDP,
+      # ex. AI_MODEL_SECRET_REMOTE_API_MISTRAL=sk-...
+    volumes:
+      - ai-data:/data
+    depends_on:
+      - orce
+
   # ---------------------------------------------------------- caddy (TLS front end)
   caddy:
     image: caddy:2
@@ -141,3 +167,4 @@ volumes:
   sftp-data:
   caddy-data:
   caddy-config:
+  ai-data:

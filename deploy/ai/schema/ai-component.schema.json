@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exemple.atelier/ns/ai-component-schema/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "@type",
+    "cmp:label",
+    "cmp:contract",
+    "cmp:source",
+    "cmp:model",
+    "cmp:promptTemplate",
+    "cmp:cardinality",
+    "cmp:outputMode",
+    "cmp:provenanceFields",
+    "cmp:promptVersion"
+  ],
+  "properties": {
+    "@context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cmp"
+      ],
+      "properties": {
+        "cmp": {
+          "const": "https://exemple.atelier/ns/component#"
+        },
+        "app": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "@type": {
+      "const": "cmp:AiComponent"
+    },
+    "cmp:label": {
+      "type": "object",
+      "required": [
+        "en"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "cmp:core": {
+      "type": "boolean"
+    },
+    "cmp:package": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:contract": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:source": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:model": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9+.-]*://[a-zA-Z0-9._/-]+$"
+    },
+    "cmp:promptTemplate": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cmp:cardinality": {
+      "enum": [
+        "cmp:perResource",
+        "cmp:perContainer"
+      ]
+    },
+    "cmp:outputMode": {
+      "enum": [
+        "cmp:text",
+        "cmp:structured"
+      ]
+    },
+    "cmp:outputCore": {
+      "type": "boolean"
+    },
+    "cmp:outputPackage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:outputContract": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:outputTarget": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cmp:outputField": {
+      "type": "string"
+    },
+    "cmp:provenanceFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cmp:modelField",
+        "cmp:componentField",
+        "cmp:promptVersionField",
+        "cmp:runDateField",
+        "cmp:localeField"
+      ],
+      "properties": {
+        "cmp:modelField": {
+          "type": "string"
+        },
+        "cmp:componentField": {
+          "type": "string"
+        },
+        "cmp:promptVersionField": {
+          "type": "string"
+        },
+        "cmp:runDateField": {
+          "type": "string"
+        },
+        "cmp:localeField": {
+          "type": "string"
+        }
+      }
+    },
+    "cmp:parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "maxOutputLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    "cmp:promptVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+){0,2}$"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "cmp:core"
+      ]
+    },
+    {
+      "required": [
+        "cmp:package"
+      ]
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "cmp:core": {
+            "const": true
+          }
+        },
+        "required": [
+          "cmp:core"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "cmp:package"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cmp:core": {
+            "const": false
+          }
+        },
+        "required": [
+          "cmp:core"
+        ]
+      },
+      "then": {
+        "required": [
+          "cmp:package"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cmp:outputMode": {
+            "const": "cmp:text"
+          }
+        },
+        "required": [
+          "cmp:outputMode"
+        ]
+      },
+      "then": {
+        "required": [
+          "cmp:outputField"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cmp:outputMode": {
+            "const": "cmp:text"
+          },
+          "cmp:cardinality": {
+            "const": "cmp:perResource"
+          }
+        },
+        "required": [
+          "cmp:outputMode",
+          "cmp:cardinality"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "cmp:outputTarget"
+              ]
+            },
+            {
+              "required": [
+                "cmp:outputPackage"
+              ]
+            },
+            {
+              "required": [
+                "cmp:outputContract"
+              ]
+            },
+            {
+              "required": [
+                "cmp:outputCore"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cmp:outputMode": {
+            "const": "cmp:text"
+          },
+          "cmp:cardinality": {
+            "const": "cmp:perContainer"
+          }
+        },
+        "required": [
+          "cmp:outputMode",
+          "cmp:cardinality"
+        ]
+      },
+      "then": {
+        "required": [
+          "cmp:outputTarget",
+          "cmp:outputContract"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "cmp:outputPackage"
+            ]
+          },
+          {
+            "properties": {
+              "cmp:outputCore": {
+                "const": true
+              }
+            },
+            "required": [
+              "cmp:outputCore"
+            ]
+          }
+        ],
+        "not": {
+          "properties": {
+            "cmp:outputCore": {
+              "const": true
+            }
+          },
+          "required": [
+            "cmp:outputCore",
+            "cmp:outputPackage"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cmp:outputMode": {
+            "const": "cmp:structured"
+          }
+        },
+        "required": [
+          "cmp:outputMode"
+        ]
+      },
+      "then": {
+        "required": [
+          "cmp:outputTarget",
+          "cmp:outputContract"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "cmp:outputPackage"
+            ]
+          },
+          {
+            "properties": {
+              "cmp:outputCore": {
+                "const": true
+              }
+            },
+            "required": [
+              "cmp:outputCore"
+            ]
+          }
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "properties": {
+                "cmp:outputCore": {
+                  "const": true
+                }
+              },
+              "required": [
+                "cmp:outputCore",
+                "cmp:outputPackage"
+              ]
+            },
+            {
+              "required": [
+                "cmp:outputField"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
