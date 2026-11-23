@@ -17,6 +17,11 @@ n'introduit aucune table côté serveur de données (§3.0).
 - `GET /ai/jobs/<id>` : ressource de suivi, **demandeur seul** (403 sinon), stockage propre
   du service (volume `ai-data`), rétention `AI_JOB_RETENTION_DAYS` (défaut 7 j).
 - `GET /ai/models` : registre rechargé à la volée depuis `/ai_models/` (annexe B).
+
+**Provisionnement** : la table `app.ai_models` (conteneur `/ai_models/`, pk `name`) est
+déclarée dans le `config/model.json` du déploiement (appliquée au boot d'orce) ;
+ACL + seed du modèle local dans `app-supervision-backend/sql/142_components_ai_models_acl.sql`
+(read foaf:Agent, write admin — aucun credential, F1.4).
 - `GET /ai/admin/counters` : compteurs de runs par composant/modèle (F5.3), rôle admin.
 - Provenance (R1.8) : 5 colonnes de la table écrite remplies à l'écriture (modèle,
   composant, version de prompt, date, locale).
