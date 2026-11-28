@@ -1,9 +1,9 @@
-"""Validation structurelle du document composant IA (annexe A, J14).
+"""Structural validation of the AI component document (annex A, J14).
 
-Le schéma est extrait tel quel de la spec (spec/app-ai-component-editor.md,
-annexe A) vers schema/ai-component.schema.json — une seule source de vérité.
-Contrôles sémantiques (placeholders, contrats, provenance) : hors schéma,
-faits par le moteur à la publication/exécution (F7.1).
+The schema is extracted verbatim from the spec (spec/app-ai-component-editor.md,
+annex A) into schema/ai-component.schema.json — a single source of truth.
+Semantic checks (placeholders, contracts, provenance): outside the schema,
+performed by the engine at publish/run time (F7.1).
 """
 from __future__ import annotations
 
@@ -23,13 +23,13 @@ def validator() -> jsonschema.Draft202012Validator:
         with open(_SCHEMA_PATH) as f:
             schema = json.load(f)
         jsonschema.Draft202012Validator.check_schema(schema)
-        # rev 5 : format: uri est annotatif par défaut -> on active la validation de format
+        # rev 5: format: uri is annotative by default -> enable format validation
         _validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
     return _validator
 
 
 def validate_component(doc) -> list[str]:
-    """Retourne la liste des erreurs de schéma (vide = valide)."""
+    """Returns the list of schema errors (empty = valid)."""
     if not isinstance(doc, dict):
-        return ["document non objet"]
+        return ["document is not an object"]
     return [f"{'/'.join(str(p) for p in e.absolute_path)}: {e.message}" for e in validator().iter_errors(doc)]

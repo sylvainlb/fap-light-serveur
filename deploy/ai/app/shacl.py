@@ -1,10 +1,10 @@
-"""Validation SHACL des sorties structurées (F4.2) — réutilisation du moteur ext/shacl.
+"""SHACL validation of structured outputs (F4.2) — reuse of the ext/shacl engine.
 
-Aucun second validateur : la pile appelle l'endpoint de validation externe du
-serveur de données (J3, ldp-shacl-api v1.1 : POST /apps/<slug>/validate[/<table>],
-corps RDF/JSON-LD, réponse = W3C ValidationReport JSON-LD sh:conforms + sh:result[]).
-Pour le modèle cœur, l'URL est dérivée de la racine (env SHACL_VALIDATE_URL_TEMPLATE
-permet de surcharger, ex. "https://{base}/validate/{table}").
+No second validator: the stack calls the external validation endpoint of
+the data server (J3, ldp-shacl-api v1.1: POST /apps/<slug>/validate[/<table>],
+RDF/JSON-LD body, response = W3C ValidationReport JSON-LD sh:conforms + sh:result[]).
+For the core model, the URL is derived from the root (env
+SHACL_VALIDATE_URL_TEMPLATE allows overriding, e.g. "https://{base}/validate/{table}").
 """
 from __future__ import annotations
 
@@ -25,15 +25,15 @@ class ValidationFailed(Exception):
             f"{r.get(SH + 'resultMessage', r.get('sh:resultMessage', ''))}"
             for r in results[:5]
         )
-        super().__init__(f"non conforme ({len(results)} violation(s)): {msg}")
+        super().__init__(f"non-conformant ({len(results)} violation(s)): {msg}")
 
 
 def validate_url_for(contract_url: str, output_target: str) -> str:
-    """Dérive l'URL de validation J3 depuis le contrat épinglé et la cible.
+    """Derives the J3 validation URL from the pinned contract and the target.
 
-    Package : https://pod/apps/<slug>/shapes + cible /apps/<slug>/<table>/
+    Package: https://pod/apps/<slug>/shapes + target /apps/<slug>/<table>/
       -> https://pod/apps/<slug>/validate[/<table>]
-    Cœur : https://pod/shapes + cible /<table>/ -> template env ou {base}/validate/<table>
+    Core: https://pod/shapes + target /<table>/ -> env template or {base}/validate/<table>
     """
     template = os.environ.get("SHACL_VALIDATE_URL_TEMPLATE")
     if template:
@@ -44,7 +44,7 @@ def validate_url_for(contract_url: str, output_target: str) -> str:
     if "/apps/" in contract_url:
         base, slug = contract_url.split("/apps/")[0], contract_url.split("/apps/")[1].split("/")[0]
         table = output_target.rstrip("/").rsplit("/", 1)[-1]
-        # si la cible est sous le même package, restreindre à la shape de la table
+        # if the target is under the same package, restrict to the table shape
         if f"/apps/{slug}/" in output_target:
             return f"{base}/apps/{slug}/{table}/validate"
         return f"{base}/apps/{slug}/validate"
@@ -59,7 +59,7 @@ def conforms(report: dict) -> bool:
 
 
 def validate_graph(ldp, data_doc: dict, validate_url: str) -> dict:
-    """POST le graphe RDF/JSON-LD sur l'endpoint J3. Retourne le rapport W3C."""
+    """POSTs the RDF/JSON-LD graph to the J3 endpoint. Returns the W3C report."""
     status, _, report = ldp._req("POST", validate_url, data_doc)
     if status != 200 or not isinstance(report, dict):
         raise ValidationFailed(report if isinstance(report, dict) else {"raw": report})

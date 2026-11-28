@@ -1,9 +1,9 @@
-"""Client LDP minimal vers le serveur de données (voie standard, F2.1/F4.4).
+"""Minimal LDP client towards the data server (standard path, F2.1/F4.4).
 
-L'identité du demandeur est propagée au serveur (F6.2) : en v1 dev, le jeton
-Bearer reçu est forwardé tel quel (AI_JWT_FORWARD_BEARER=1, défaut) ; le
-mécanisme définitif (token exchange RFC 8693 ou compte de service) est
-arbitré à J15 — voir spec §F6.2 rev 5.
+The requester's identity is propagated to the server (F6.2): in v1 dev,
+the received Bearer token is forwarded as-is (AI_JWT_FORWARD_BEARER=1,
+default); the definitive mechanism (RFC 8693 token exchange or service
+account) is arbitrated at J15 — see spec §F6.2 rev 5.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class LDPClient:
         except urllib.error.HTTPError as e:
             raise LDPError(e.code, e.read().decode(errors="replace")) from e
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise LDPError(502, f"serveur de données injoignable: {e}") from e
+            raise LDPError(502, f"data server unreachable: {e}") from e
 
     def get_json(self, iri: str) -> dict:
         _, _, doc = self._req("GET", iri)
@@ -63,5 +63,5 @@ class LDPClient:
         _, headers, _ = self._req("POST", container, doc)
         loc = headers.get("Location") or headers.get("location")
         if not loc:
-            raise LDPError(500, "POST sans header Location")
+            raise LDPError(500, "POST without Location header")
         return loc

@@ -1,13 +1,13 @@
-"""Abstraction des modèles (F1.1, F1.2, C4).
+"""Model abstraction (F1.1, F1.2, C4).
 
-Le schéma d'URI du `name` (ollama://, remote://…) sélectionne l'adaptateur
-de protocole ; en v1 tous les adaptateurs parlent l'API compatible OpenAI
-(`POST {endpoint}/chat/completions`). L'interchangeabilité porte sur cette
-abstraction : changer de modèle ne change ni le code ni l'hôte (C4).
+The URI scheme of `name` (ollama://, remote://…) selects the protocol
+adapter; in v1 all adapters speak the OpenAI-compatible API
+(`POST {endpoint}/chat/completions`). Interchangeability lives at this
+abstraction level: switching models changes neither the code nor the host (C4).
 
-Credentials (F1.4) : jamais dans le registre ; lus dans les secrets du
-service, env `AI_MODEL_SECRET_<NAME_NORMALISE>` (name sans le schéma et
-les caractères spéciaux), envoyés uniquement vers l'endpoint déclaré.
+Credentials (F1.4): never in the registry; read from the service
+secrets, env `AI_MODEL_SECRET_<NORMALIZED_NAME>` (name without the scheme
+and special characters), sent only to the declared endpoint.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import urllib.error
 
 
 class ModelCallError(Exception):
-    """Échec d'appel modèle (F2.3 : rapporté, jamais d'écriture compensatoire)."""
+    """Model call failure (F2.3: reported, never a compensating write)."""
 
 
 def _secret_env_name(name: str) -> str:
@@ -35,17 +35,17 @@ def adapter_for(name: str) -> str:
     scheme = name.split("://", 1)[0]
     if scheme in ("ollama", "remote", "openai"):
         return "openai_chat"
-    raise ModelCallError(f"schéma d'URI inconnu pour le modèle '{name}'")
+    raise ModelCallError(f"unknown URI scheme for model '{name}'")
 
 
 def call_model(entry: dict, prompt: str, params: dict, locale: str, timeout: float = 120.0,
                response_format: dict | None = None, system_extra: str | None = None) -> str:
-    """Appel synchrone au modèle déclaré. Retourne le texte brut de sortie."""
+    """Synchronous call to the declared model. Returns the raw output text."""
     protocol = adapter_for(entry["name"])
     if protocol != "openai_chat":
-        raise ModelCallError(f"protocole non supporté en v1: {protocol}")
+        raise ModelCallError(f"protocol not supported in v1: {protocol}")
     if entry.get("protocol") not in (None, "openai_chat"):
-        raise ModelCallError(f"protocole du registre non supporté en v1: {entry['protocol']}")
+        raise ModelCallError(f"registry protocol not supported in v1: {entry['protocol']}")
 
     endpoint = entry["endpoint"].rstrip("/")
     url = f"{endpoint}/chat/completions"
@@ -63,7 +63,7 @@ def call_model(entry: dict, prompt: str, params: dict, locale: str, timeout: flo
     if "maxOutputLength" in params:
         body["max_tokens"] = params["maxOutputLength"]
     if response_format:
-        body["response_format"] = response_format  # sortie structurée native (F4.1)
+        body["response_format"] = response_format  # native structured output (F4.1)
 
     headers = {"Content-Type": "application/json"}
     secret = _secret_for(entry["name"])
@@ -77,9 +77,9 @@ def call_model(entry: dict, prompt: str, params: dict, locale: str, timeout: flo
     except urllib.error.HTTPError as e:
         raise ModelCallError(f"endpoint {url} -> HTTP {e.code}: {e.read().decode(errors='replace')[:200]}") from e
     except (urllib.error.URLError, TimeoutError) as e:
-        raise ModelCallError(f"endpoint {url} injoignable: {e}") from e
+        raise ModelCallError(f"endpoint {url} unreachable: {e}") from e
 
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
-        raise ModelCallError(f"réponse du modèle mal formée: {e}") from e
+        raise ModelCallError(f"malformed model response: {e}") from e

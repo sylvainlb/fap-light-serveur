@@ -1,4 +1,4 @@
-"""Erreur métier -> code HTTP + code d'erreur stable (annexe C)."""
+"""Business error -> HTTP status + stable error code (annex C)."""
 
 
 class RunError(Exception):

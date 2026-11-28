@@ -1,4 +1,4 @@
-"""Tests du schéma annexe A (extrait de la spec) — cas mode × cardinalité."""
+"""Tests of the annex A schema (extracted from the spec) — mode × cardinality cases."""
 import copy
 import json
 import os
@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app.schema import validate_component  # noqa: E402
 
 BASE = {
-    "@context": {"cmp": "https://exemple.atelier/ns/component#", "app": "https://pod/ns/app/interventions#"},
+    "@context": {"cmp": "https://example.workshop/ns/component#", "app": "https://pod/ns/app/interventions#"},
     "@type": "cmp:AiComponent",
     "cmp:label": {"en": "X"},
     "cmp:package": "https://pod/apps/atelier/meta",
@@ -60,9 +60,9 @@ class TestSchema(unittest.TestCase):
 
     def test_texte_per_container_exige_cible_et_epinglage(self):
         d = copy.deepcopy(BASE); d["cmp:cardinality"] = "cmp:perContainer"
-        self.ko(d)  # rien
-        d["cmp:outputTarget"] = "https://pod/s/"; self.ko(d)  # pas de contrat
-        d["cmp:outputContract"] = "https://pod/apps/atelier/shapes"; self.ko(d)  # pas d'épinglage source
+        self.ko(d)  # nothing
+        d["cmp:outputTarget"] = "https://pod/s/"; self.ko(d)  # no contract
+        d["cmp:outputContract"] = "https://pod/apps/atelier/shapes"; self.ko(d)  # no source pinning
         d["cmp:outputPackage"] = "https://pod/apps/atelier/meta"; self.ok(d)
 
     def test_epinglage_sortie_exclusif(self):
@@ -75,7 +75,7 @@ class TestSchema(unittest.TestCase):
         d = copy.deepcopy(BASE); d["cmp:outputMode"] = "cmp:structured"
         d.update({"cmp:outputTarget": "https://pod/s/", "cmp:outputContract": "https://pod/s",
                   "cmp:outputPackage": "https://pod/m"})
-        self.ko(d)  # outputField encore présent
+        self.ko(d)  # outputField still present
         del d["cmp:outputField"]; self.ok(d)
 
     def test_parametres_bornes_et_fermes(self):
@@ -91,7 +91,7 @@ class TestSchema(unittest.TestCase):
         self.ko(d)
 
     def test_model_pattern_uri(self):
-        d = copy.deepcopy(BASE); d["cmp:model"] = "pas un uri"
+        d = copy.deepcopy(BASE); d["cmp:model"] = "not a uri"
         self.ko(d)
 
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://exemple.atelier/ns/ai-component-schema/v1",
+  "$id": "https://example.workshop/ns/ai-component-schema/v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,7 +24,7 @@
       ],
       "properties": {
         "cmp": {
-          "const": "https://exemple.atelier/ns/component#"
+          "const": "https://example.workshop/ns/component#"
         },
         "app": {
           "type": "string",

@@ -1,12 +1,12 @@
-"""Sorties structurées (F4.1–F4.3, J16).
+"""Structured outputs (F4.1–F4.3, J16).
 
-Génération contrainte par la shape de la table de sortie : si le modèle a
-`native_structured_output`, on envoie `response_format` (JSON schema dérivé
-du contrat) ; sinon prompt-engineering (schéma dans le prompt, « JSON only »)
-+ parsing. La sortie est convertie en JSON-LD (IRIs depuis les sh:path du
-contrat) puis validée par SHACL via l'endpoint ext/shacl (shacl.py).
-Non-conforme -> maxRetries tentatives avec contre-argumentation (le rapport
-est renvoyé au modèle), puis arrêt propre SANS écriture (F4.3, C3).
+Generation constrained by the output table's shape: if the model has
+`native_structured_output`, we send `response_format` (JSON schema derived
+from the contract); otherwise prompt engineering (schema in the prompt,
+"JSON only") + parsing. The output is converted to JSON-LD (IRIs from the
+contract's sh:path) then validated by SHACL via the ext/shacl endpoint
+(shacl.py). Non-conformant -> maxRetries attempts with counter-argumentation
+(the report is sent back to the model), then clean stop WITHOUT writing (F4.3, C3).
 """
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ def _local(iri: str) -> str:
 
 
 def shape_of(contract_doc: dict) -> dict:
-    """Extrait la shape (propriétés) du contrat JSON-LD : {local: {iri, datatype, ...}}.
+    """Extracts the shape (properties) from the JSON-LD contract: {local: {iri, datatype, ...}}.
 
-    Le contrat servi par ext/shacl embarque les sh:property en inline dans le
-    NodeShape ; on parcourt récursivement @graph + sh:property.
+    The contract served by ext/shacl embeds sh:property inline in the
+    NodeShape; we walk @graph + sh:property recursively.
     """
     props: dict[str, dict] = {}
 
@@ -54,7 +54,7 @@ def shape_of(contract_doc: dict) -> dict:
 
 
 def json_schema_for(props: dict) -> dict:
-    """JSON Schema dérivé de la shape (pour response_format natif, F4.1)."""
+    """JSON Schema derived from the shape (for native response_format, F4.1)."""
     properties, required = {}, []
     for local, p in props.items():
         t = {"string": "string", "integer": "integer", "decimal": "number",
@@ -69,13 +69,13 @@ def json_schema_for(props: dict) -> dict:
 
 
 def extract_json(text: str) -> dict:
-    """Extrait le premier objet JSON de la sortie brute du modèle."""
+    """Extracts the first JSON object from the model's raw output."""
     m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
     if m:
         return json.loads(m.group(1))
     start = text.find("{")
     if start < 0:
-        raise ValueError("aucun objet JSON dans la sortie")
+        raise ValueError("no JSON object in the output")
     depth = 0
     for i in range(start, len(text)):
         if text[i] == "{":
@@ -84,18 +84,18 @@ def extract_json(text: str) -> dict:
             depth -= 1
             if depth == 0:
                 return json.loads(text[start:i + 1])
-    raise ValueError("JSON tronqué dans la sortie")
+    raise ValueError("truncated JSON in the output")
 
 
 def to_jsonld(parsed: dict, props: dict, class_iri: str | None = None) -> dict:
-    """Convertit le JSON du modèle en document JSON-LD (IRIs du contrat)."""
+    """Converts the model's JSON into a JSON-LD document (contract IRIs)."""
     doc: dict = {"@context": {"sh": SH}}
     if class_iri:
         doc["@type"] = class_iri
     for local, value in parsed.items():
         p = props.get(local)
         if p is None:
-            # tolérance : clé inconnue -> ignorée (le SHACL jugera si pertinent)
+            # tolerance: unknown key -> ignored (SHACL will judge if relevant)
             continue
         doc[p["iri"]] = value
     return doc
@@ -114,10 +114,10 @@ def class_of(contract_doc: dict) -> str | None:
 
 def generate_structured(entry, component, contract_doc, base_prompt, params, locale,
                         model_caller, ldp, validate_url) -> tuple[dict, dict]:
-    """Boucle génération -> parsing -> conversion -> SHACL, avec maxRetries (F4.3).
+    """Loop generation -> parsing -> conversion -> SHACL, with maxRetries (F4.3).
 
-    Retourne (doc_jsonld_conforme, rapport). Lève RunError(422 output_validation_failed)
-    avec le rapport W3C en extra après épuisement des tentatives — aucune écriture.
+    Returns (conforming jsonld_doc, report). Raises RunError(422 output_validation_failed)
+    with the W3C report in extra after retries are exhausted — no write.
     """
     props = shape_of(contract_doc)
     schema = json_schema_for(props)
@@ -140,10 +140,10 @@ def generate_structured(entry, component, contract_doc, base_prompt, params, loc
         report = shacl.validate_graph(ldp, doc, validate_url)
         if shacl.conforms(report):
             return doc, report
-        # contre-argumentation avec le rapport d'erreur (F4.3)
+        # counter-argumentation with the error report (F4.3)
         prompt = (f"{base_prompt}\n\nYour previous output did not conform to the contract. "
                   f"Validation report: {json.dumps(report, ensure_ascii=False)[:4000]}\n"
                   f"Fix every violation and output JSON only, conforming to: {json.dumps(schema)}")
     raise RunError(422, "output_validation_failed",
-                   "sortie non conforme après tentatives — aucune écriture (F4.3)",
+                   "non-conformant output after retries — no write (F4.3)",
                    extra={"validationReport": report})

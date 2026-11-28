@@ -1,7 +1,7 @@
-"""Tests d'API de bout en bout : POST /ai/run, GET /ai/jobs/<id>, /ai/models, compteurs admin.
+"""End-to-end API tests: POST /ai/run, GET /ai/jobs/<id>, /ai/models, admin counters.
 
-Serveur réel sur port éphémère, LDP et modèle remplacés par des fakes.
-Auth dev : AI_DEV_INSECURE=1 + headers X-Webid/X-Role.
+Real server on an ephemeral port, LDP and model replaced by fakes.
+Dev auth: AI_DEV_INSECURE=1 + X-Webid/X-Role headers.
 """
 import copy
 import json
@@ -24,7 +24,7 @@ from app.server import AIHandler, App  # noqa: E402
 os.environ["AI_DEV_INSECURE"] = "1"
 os.environ["AI_JWT_VERIFY"] = "0"
 
-CTX = {"cmp": "https://exemple.atelier/ns/component#", "app": "https://pod/ns/app/interventions#"}
+CTX = {"cmp": "https://example.workshop/ns/component#", "app": "https://pod/ns/app/interventions#"}
 CONTRACT = {"@graph": [{"sh:path": {"@id": "https://pod/ns/app/interventions#report"}}]}
 DRAFT = {
     "@context": CTX, "@type": "cmp:AiComponent", "cmp:label": {"en": "Sum"},
@@ -44,7 +44,7 @@ class FakeLDP:
         self.docs = {
             "https://pod/shapes": CONTRACT,
             "https://pod/interventions/42": {"@id": "https://pod/interventions/42",
-                                              "https://pod/ns/app/interventions#report": "Pompe remplacée"},
+                                              "https://pod/ns/app/interventions#report": "Pump replaced"},
         }
         self.members = {"https://pod/interventions/": ["https://pod/interventions/1"]}
         self.docs["https://pod/interventions/1"] = {"https://pod/ns/app/interventions#report": "r1"}
@@ -98,9 +98,9 @@ class TestAPI(unittest.TestCase):
             "name": "ollama://mistral-small", "protocol": "openai_chat",
             "endpoint": "http://ollama:11434/v1", "model_id": "mistral-small", "location": "local"}})
         app = App("http://ldp.invalid", "/ai_models/", cls.state, cls.registry,
-                  model_caller=lambda e, p, pa, l: "TEXTE")
+                  model_caller=lambda e, p, pa, l: "TEXT")
         app.engine.ldp_factory = lambda token: cls.ldp
-        app._ldp_factory = lambda token: cls.ldp  # reload du registre via /ai/models
+        app._ldp_factory = lambda token: cls.ldp  # registry reload via /ai/models
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), AIHandler)
         cls.srv.app = app
         import threading
@@ -126,7 +126,7 @@ class TestAPI(unittest.TestCase):
                     {"componentDraft": DRAFT, "source": "https://pod/interventions/42", "locale": "fr"})
         self.assertEqual(s, 200, b)
         self.assertEqual(b["patched"]["resource"], "https://pod/interventions/42")
-        self.assertEqual(self.ldp.patches[-1][1]["app:summary"], "TEXTE")
+        self.assertEqual(self.ldp.patches[-1][1]["app:summary"], "TEXT")
         self.assertEqual(self.ldp.patches[-1][1]["app:p_cmp:localeField"], "fr")
 
     def test_component_et_draft_ensemble_400(self):
@@ -139,13 +139,13 @@ class TestAPI(unittest.TestCase):
         self.assertEqual(s, 400)
 
     def test_schema_invalide_422(self):
-        bad = copy.deepcopy(DRAFT); bad.pop("cmp:core")  # ni core ni package -> rejet (rev 5)
+        bad = copy.deepcopy(DRAFT); bad.pop("cmp:core")  # neither core nor package -> rejection (rev 5)
         s, b = call("POST", self.base + "/ai/run",
                     {"componentDraft": bad, "source": "https://pod/interventions/42"})
         self.assertEqual((s, b["error"]["code"]), (422, "component_invalid"))
 
     def test_modele_absent_registre_422(self):
-        d = copy.deepcopy(DRAFT); d["cmp:model"] = "ollama://inconnu"
+        d = copy.deepcopy(DRAFT); d["cmp:model"] = "ollama://unknown"
         s, b = call("POST", self.base + "/ai/run",
                     {"componentDraft": d, "source": "https://pod/interventions/42"})
         self.assertEqual((s, b["error"]["code"]), (422, "component_invalid"))
@@ -173,10 +173,10 @@ class TestAPI(unittest.TestCase):
         self.assertEqual(j["state"], "succeeded")
         self.assertEqual(j["written"]["created"], "https://pod/summaries/gen-1")
         self.assertEqual(j["requester"], "https://pod/users/1")
-        # un autre demandeur ne voit pas le job
+        # another requester cannot see the job
         s, b2 = call("GET", self.base + job_uri, webid="https://pod/users/2")
         self.assertEqual((s, b2["error"]["code"]), (403, "forbidden"))
-        # job inconnu
+        # unknown job
         s, _ = call("GET", self.base + "/ai/jobs/" + "0" * 32)
         self.assertEqual(s, 404)
 

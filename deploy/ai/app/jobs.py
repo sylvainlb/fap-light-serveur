@@ -1,8 +1,8 @@
-"""Stockage propre du service (F5.3, F6.3) : jobs async et compteurs.
+"""Service-local storage (F5.3, F6.3): async jobs and counters.
 
-Aucune table du serveur de données (3.0) : état local du service, persisté
-en JSON dans AI_STATE_DIR (volume provisionné par le déploiement), exposé
-en lecture sur l'API du service (jobs : demandeur seul ; compteurs : admins).
+No table on the data server (3.0): local service state, persisted as
+JSON in AI_STATE_DIR (volume provisioned by the deployment), exposed
+read-only on the service API (jobs: requester only; counters: admins).
 """
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ class StateStore:
         self._lock = threading.Lock()
         self._jobs_path = os.path.join(state_dir, "jobs.json")
         self._counters_path = os.path.join(state_dir, "counters.json")
-        self.budget_max_runs = budget_max_runs      # 0 = illimité (F6.3)
+        self.budget_max_runs = budget_max_runs      # 0 = unlimited (F6.3)
         self.budget_window_days = budget_window_days
-        self.retention_days = retention_days         # purge des jobs (annexe C)
+        self.retention_days = retention_days         # job purge (annex C)
         self._jobs = self._load(self._jobs_path)
         self._counters = self._load(self._counters_path)
 
@@ -87,7 +87,7 @@ class StateStore:
                 self._save(self._jobs_path, self._jobs)
             return len(stale)
 
-    # ------------------------------------------------------------ compteurs
+    # ------------------------------------------------------------ counters
     def incr_counter(self, component: str, model: str, is_test: bool) -> dict:
         with self._lock:
             key = f"{component}"

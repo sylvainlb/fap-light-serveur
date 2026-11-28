@@ -1,9 +1,9 @@
-"""API du service ORCE pile IA (F2.4, annexe C) : POST /ai/run, GET /ai/jobs/<id>.
+"""API of the ORCE AI stack service (F2.4, annex C): POST /ai/run, GET /ai/jobs/<id>.
 
-Authentification : OIDC du demandeur (Bearer JWT). En dev (AI_JWT_VERIFY=0),
-le payload JWT est décodé sans vérification de signature (réseau interne TLS) ;
-AI_DEV_INSECURE=1 accepte les headers X-Webid/X-Role. La propagation au LDP
-forward le Bearer (F6.2, arbitrage définitif à J15).
+Authentication: requester OIDC (Bearer JWT). In dev (AI_JWT_VERIFY=0),
+the JWT payload is decoded without signature verification (internal TLS
+network); AI_DEV_INSECURE=1 accepts X-Webid/X-Role headers. Propagation to
+the LDP forwards the Bearer (F6.2, definitive arbitration at J15).
 """
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from .identity import IdentityError, ldp_token_for
 from .jobs import StateStore
 from .ldp import LDPClient, LDPError
 from .registry import ModelRegistry
-from .template import ComponentInvalid  # noqa: F401 (réexport)
+from .template import ComponentInvalid  # noqa: F401 (re-export)
 
 
 def identity_from_headers(headers) -> tuple[str, str]:
-    """(webid, role) du demandeur. 401 si absent."""
+    """Requester's (webid, role). 401 if missing."""
     auth = headers.get("Authorization", "")
     dev_insecure = os.environ.get("AI_DEV_INSECURE", "0") == "1"
     if auth.startswith("Bearer ") and os.environ.get("AI_JWT_VERIFY", "0") == "0":
@@ -39,7 +39,7 @@ def identity_from_headers(headers) -> tuple[str, str]:
         webid = headers.get("X-Webid")
         if webid:
             return webid, headers.get("X-Role", "user")
-    raise RunError(401, "unauthorized", "identité requise (Bearer OIDC)")
+    raise RunError(401, "unauthorized", "identity required (Bearer OIDC)")
 
 
 class App:
@@ -84,9 +84,9 @@ class AIHandler(BaseHTTPRequestHandler):
                 raise ValueError
             return doc
         except ValueError:
-            raise RunError(400, "invalid_request", "corps JSON objet requis") from None
+            raise RunError(400, "invalid_request", "JSON object body required") from None
 
-    def log_message(self, fmt, *args):  # log concis
+    def log_message(self, fmt, *args):  # concise log
         print("ai:", fmt % args, flush=True)
 
     # ------------------------------------------------------------------ routes
@@ -99,68 +99,68 @@ class AIHandler(BaseHTTPRequestHandler):
                 webid, _ = identity_from_headers(self.headers)
                 job = self.app.state.get_job(m.group(1))
                 if job is None:
-                    raise RunError(404, "not_found", "job inconnu")
+                    raise RunError(404, "not_found", "unknown job")
                 if job["requester"] != webid:
-                    raise RunError(403, "forbidden", "job consultable par le seul demandeur (annexe C)")
+                    raise RunError(403, "forbidden", "job visible to the requester only (annex C)")
                 return self._send(200, job)
             if self.path == "/ai/models":
                 webid, _ = identity_from_headers(self.headers)
-                # recharge à la volée : le service peut démarrer avant le LDP
+                # hot reload: the service may start before the LDP
                 token = self.headers.get("Authorization", "").replace("Bearer ", "") or None
                 try:
                     self.app.registry.reload(self.app._ldp_factory(token), self.app.models_container)
                 except LDPError as e:
-                    raise RunError(502, "ldp_error", f"registre indisponible: {e}") from e
+                    raise RunError(502, "ldp_error", f"registry unavailable: {e}") from e
                 return self._send(200, {"models": self.app.registry.list_public()})
             if self.path == "/ai/admin/counters":
                 _, role = identity_from_headers(self.headers)
                 if role != "admin":
-                    raise RunError(403, "forbidden", "rôle admin requis (F5.3)")
+                    raise RunError(403, "forbidden", "admin role required (F5.3)")
                 return self._send(200, {"counters": self.app.state.counters()})
-            raise RunError(404, "not_found", "route inconnue")
+            raise RunError(404, "not_found", "unknown route")
         except RunError as e:
             self._error(e)
         except LDPError as e:
-            self._error(RunError(502, "ldp_error", f"serveur de données: {e}"))
+            self._error(RunError(502, "ldp_error", f"data server: {e}"))
         except Exception as e:  # noqa: BLE001
             self._error(RunError(500, "internal", str(e)))
 
     def do_POST(self):
         try:
             if self.path != "/ai/run":
-                raise RunError(404, "not_found", "route inconnue")
+                raise RunError(404, "not_found", "unknown route")
             webid, _ = identity_from_headers(self.headers)
             body = self._body()
             component, draft = body.get("component"), body.get("componentDraft")
-            # annexe C rev 5 : exactement un des deux
+            # annex C rev 5: exactly one of the two
             if (component and draft) or (not component and not draft):
-                raise RunError(400, "invalid_request", "exactement un de 'component' / 'componentDraft' requis")
+                raise RunError(400, "invalid_request", "exactly one of 'component' / 'componentDraft' required")
             source = body.get("source")
             if not source:
-                raise RunError(400, "invalid_request", "'source' requis")
+                raise RunError(400, "invalid_request", "'source' required")
             locale = body.get("locale", "en")
             bearer = self.headers.get("Authorization", "").replace("Bearer ", "") or None
             try:
-                token = ldp_token_for(bearer, webid)  # F6.2 : token exchange RFC 8693 si AI_TOKEN_EXCHANGE=1
+                token = ldp_token_for(bearer, webid)  # F6.2: RFC 8693 token exchange if AI_TOKEN_EXCHANGE=1
             except IdentityError as e:
                 raise RunError(502, "identity_exchange_failed", str(e)) from e
 
             doc = draft if draft else self.app.engine.ldp_factory(token).get_json(component)
             ref = component_ref_for(component, draft)
-            is_test = draft is not None  # chemin éditeur = test (annexe C, F5.3)
+            is_test = draft is not None  # editor path = test (annex C, F5.3)
 
             if doc.get("cmp:cardinality") == "cmp:perContainer":
                 job = self.app.engine.run_async(doc, ref, source, locale, token, webid, is_test)
                 return self._send(202, {"job": f"/ai/jobs/{job['job']}"})
             result = self.app.engine.run_sync(doc, ref, source, locale, token)
-            return self._send(200, result)  # annexe C : {"patched": {"resource", "field"}}
+            return self._send(200, result)  # annex C: {"patched": {"resource", "field"}}
         except RunError as e:
             self._error(e)
         except LDPError as e:
             if e.status == 404:
-                self._error(RunError(404, "not_found", f"composant ou source inconnu: {e.body[:100]}"))
+                self._error(RunError(404, "not_found", f"unknown component or source: {e.body[:100]}"))
             else:
-                self._error(RunError(502, "ldp_error", f"serveur de données: {e}"))
+                self._error(RunError(502, "ldp_error", f"data server: {e}"))
         except Exception as e:  # noqa: BLE001
             self._error(RunError(500, "internal", str(e)))
 
@@ -178,15 +178,15 @@ def main() -> None:
     registry = ModelRegistry({})
     try:
         n = registry.reload(ldp_admin, container)
-        print(f"registre chargé: {n} modèle(s)", flush=True)
-    except Exception as e:  # le LDP peut ne pas être encore là : /ai/models rechargera
-        print(f"registre indisponible au boot ({e}) — rechargé via GET /ai/models", flush=True)
+        print(f"registry loaded: {n} model(s)", flush=True)
+    except Exception as e:  # the LDP may not be up yet: /ai/models will reload
+        print(f"registry unavailable at boot ({e}) — reloaded via GET /ai/models", flush=True)
     app = App(ldp_base, container, state, registry)
     port = int(os.environ.get("AI_PORT", "8080"))
     srv = ThreadingHTTPServer(("0.0.0.0", port), AIHandler)
     srv.app = app  # type: ignore[attr-defined]
-    print(f"pile IA (J15) — POST /ai/run sur :{port}, LDP={ldp_base}, registre={container} "
-          f"({len(registry.entries)} modèles)", flush=True)
+    print(f"AI stack (J15) — POST /ai/run on :{port}, LDP={ldp_base}, registry={container} "
+          f"({len(registry.entries)} models)", flush=True)
     srv.serve_forever()
 
 

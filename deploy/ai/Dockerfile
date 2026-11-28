@@ -1,7 +1,7 @@
-# Pile IA — chantier 5 (spec app-ai-component-editor.md rev 5, §3.0) :
-# service dédié du dépôt fap-light-serveur, activé par configuration
-# (AI_ENABLED=1 dans docker-compose), routé par caddy sur /ai/*.
-# J15 : moteur d'exécution, POST /ai/run, sorties texte.
+# AI stack — workstream 5 (spec app-ai-component-editor.md rev 5, §3.0):
+# dedicated service of the fap-light-serveur repository, enabled by configuration
+# (AI_ENABLED=1 in docker-compose), routed by caddy on /ai/*.
+# J15: execution engine, POST /ai/run, text outputs.
 FROM python:3.14-slim
 
 WORKDIR /srv/ai
